@@ -35,7 +35,7 @@ window.onload = function() {
             const activeTarget = data.activeTarget;
             if (!activeTarget) {
                 statusIndicator.className = 'linked-elsewhere';
-                logText.textContent = "Conectado. Haz clic en 🔌 para enlazar.";
+                logText.textContent = "Conectado. Haz clic en 🔗 para enlazar.";
             } else if (activeTarget === thisAppIdentifier) {
                 statusIndicator.className = 'connected';
                 logText.textContent = `✓ Enlazado con ${thisAppName}.`;
@@ -125,4 +125,5 @@ window.onload = function() {
     btnLaunch.onclick = launchDowP;
     btnSettings.onclick = setDowPPath;
     initializeApp();
+
 };
