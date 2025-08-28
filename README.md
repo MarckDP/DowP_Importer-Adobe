@@ -6,7 +6,7 @@ Una extensión para After Effects y Premiere Pro que se integra con DowP para de
   <img width="209" height="107" alt="DowP Importer Logo" src="https://github.com/user-attachments/assets/3364f21d-bcb4-4c96-b554-4776a816c336" /> 
 </div>
 
-Esta extensión depende totalmente de mi otro script, **[DowP](https://github.com/MarckDP/DowP_Downloader)**, que está un poco modificado para conectarse a esta extensión mediante un servidor interno.
+Esta extensión depende totalmente de mi otro script, **[DowP](https://github.com/MarckDP/DowP_Downloader)** (ya viene incluido en los archivos de la extensión), que está un poco modificado para conectarse a esta extensión mediante un servidor interno.
 
 Con esta extensión puedes importar directamente al proyecto y/o a la línea de tiempo los archivos que **DowP** descargue/recodifique. Toda la configuración general de descarga y recodificación se hace en DowP; la extensión solo toma los archivos finales para importarlos. Básicamente está hecha para ahorrarte tiempo.
 
