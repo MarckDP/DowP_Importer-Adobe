@@ -1,8 +1,0 @@
-customtkinter
-yt_dlp
-Pillow 
-requests
-ffmpeg
-flask
-flask-socketio
-gevent-websocket
