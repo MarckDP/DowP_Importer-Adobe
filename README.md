@@ -35,25 +35,25 @@ Lean bien, no sean como la vrg...
 
 ### Pasos de instalación
 
-2. **Primera ejecución**: Para usar la extensión TIENES que abrir `main.py` solo la primera vez. En la carpeta "DowP_1.2" ya tienes lo necesario para iniciar la app de forma individual y usarla sin Pr o Ae:
+1. **Primera ejecución**: Para usar la extensión TIENES que abrir `main.py` solo la primera vez. En la carpeta "DowP_1.2" ya tienes lo necesario para iniciar la app de forma individual y usarla sin Pr o Ae:
    - Doble clic a `"run_dowp.bat"` → inicia la app sin ventana de CMD
    - Doble clic a `"main.py"` → inicia con ventana de comandos xd
    
    *Tip: Puedes hacer un acceso directo de cualquiera de los dos archivos.*
 
-3. **Instalar extensión**: 
+2. **Instalar extensión**: 
    - Coloca la carpeta `"com.dowp.importer"` en: 
      ```
      C:\Program Files\Common Files\Adobe\CEP\extensions
      ```
    - Es probable que necesites activar el modo DEBUG de Adobe. Para eso usa el archivo `"Activar Debug.reg"` incluido.
 
-4. **Activar en Adobe**: 
+3. **Activar en Adobe**: 
    - En Ae o Pr ve a **Ventana → Extensiones** 
    - Encontrarás "DowP Importer", actívalo y colócalo donde quieras
    - Es una extensión pequeña que se adapta tanto horizontalmente como verticalmente
 
-5. **Vincular con DowP**: 
+4. **Vincular con DowP**: 
    - Clic en el botón ⚙️ 
    - *Nota: En Pr la ventana del explorador se abrirá detrás del programa, búscala en la barra de tareas*
    - Busca la carpeta DowP_1.2 donde la hayas guardado
