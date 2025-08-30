@@ -67,7 +67,7 @@ function executeDowP(path, appIdentifier) {
             scriptFile = new File(tempFolderPath + "/launch_dowp_temp.bat");
             scriptContent = '@echo off\n' +
                             'cd /d "' + folderPath + '"\n' +
-                            'start "" pythonw "main.py" "' + appIdentifier + '"\n';
+                            'start "" pythonw "main.pyw" "' + appIdentifier + '"\n';
         } else {
             scriptFile = new File(tempFolderPath + "/launch_dowp_temp.sh");
             scriptContent = '#!/bin/bash\n' +
@@ -480,4 +480,5 @@ function detectAVviaXMP(projectItem) {
     }
 
     return { video: hasVideo, audio: hasAudio };
+
 }
