@@ -67,7 +67,13 @@ function executeDowP(path, appIdentifier) {
             scriptFile = new File(tempFolderPath + "/launch_dowp_temp.bat");
             scriptContent = '@echo off\n' +
                             'cd /d "' + folderPath + '"\n' +
-                            'start "" pythonw "main.pyw" "' + appIdentifier + '"\n';
+                            'if exist "main.pyw" (\n' +
+                            '   start "" pythonw "main.pyw" "' + appIdentifier + '"\n' +
+                            ') else if exist "main.py" (\n' +
+                            '   start "" python "main.py" "' + appIdentifier + '"\n' +
+                            ') else (\n' +
+                            '   mshta "javascript:alert(\'ERROR: No se encontró main.pyw ni main.py en la carpeta de DowP.\');close();"\n' +
+                            ')\n';
         } else {
             scriptFile = new File(tempFolderPath + "/launch_dowp_temp.sh");
             scriptContent = '#!/bin/bash\n' +
@@ -82,6 +88,7 @@ function executeDowP(path, appIdentifier) {
         alert("Error al intentar crear el script lanzador: " + e.toString());
     }
 }
+
 
 function getActiveTimelineInfo() {
     var info = {
@@ -480,5 +487,4 @@ function detectAVviaXMP(projectItem) {
     }
 
     return { video: hasVideo, audio: hasAudio };
-
 }
