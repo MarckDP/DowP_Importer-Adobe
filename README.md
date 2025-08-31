@@ -35,9 +35,9 @@ Lean bien, no sean como la vrg...
 
 ### Pasos de instalación
 
-1. **Primera ejecución**: Para usar la extensión TIENES que abrir `main.py` solo la primera vez. En la carpeta "DowP_1.2" ya tienes lo necesario para iniciar la app de forma individual y usarla sin Pr o Ae:
+1. **Primera ejecución**: Para usar la extensión TIENES que abrir `main.pyw` solo la primera vez. En la carpeta "DowP_1.2" ya tienes lo necesario para iniciar la app de forma individual y usarla sin Pr o Ae:
    - Doble clic a `"run_dowp.bat"` → inicia la app sin ventana de CMD
-   - Doble clic a `"main.py"` → inicia con ventana de comandos xd
+   - Doble clic a `"w"` → inicia con ventana de comandos xd
    
    *Tip: Puedes hacer un acceso directo de cualquiera de los dos archivos.*
 
@@ -64,7 +64,7 @@ Lean bien, no sean como la vrg...
 
 Si tienes errores, asegúrate de que:
 - Python esté instalado correctamente
-- Hayas abierto `main.py` antes de usar la extensión
+- Hayas abierto `main.pyw` antes de usar la extensión
 - Tengas el modo DEBUG activado
 
 Si sigues teniendo problemas... pues no sé jasjjas, comenta en algún video o algo.
