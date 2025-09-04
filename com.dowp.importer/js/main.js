@@ -1,7 +1,7 @@
 window.onload = function() {
     const csInterface = new CSInterface();
     const CURRENT_EXTENSION_VERSION = "1.1.2";
-    const UPDATE_MANIFEST_URL = "https://raw.githubusercontent.com/tu-usuario/tu-repositorio/main/update.json";
+    const UPDATE_MANIFEST_URL = "https://raw.githubusercontent.com/MarckDP/DowP_Importer-Adobe/refs/heads/v1.1.2/update.json";
     const serverUrl = "http://127.0.0.1:7788";
     let thisAppName = "Desconocido";
     let thisAppIdentifier = "unknown";
@@ -194,10 +194,8 @@ window.onload = function() {
         const el = _resolveTimelineElement();
         if (!el) return;
 
-        // 1. Siempre eliminamos todas las clases de brillo para empezar de cero.
         el.classList.remove('glow-active', 'glow-strong', 'glow-pulse');
 
-        // 2. Solo aplicamos clases si la línea de tiempo está activa y el checkbox está marcado.
         const isStrong = options.strong || false;
         if (active && isStrong) {
             el.classList.add('glow-active', 'glow-strong', 'glow-pulse');
@@ -283,37 +281,28 @@ window.onload = function() {
     }
 
     function linkToThisApp() {
-        // --- CASO 1: El panel está desconectado ---
         if (!socket || !socket.connected) {
             showMessage("Conectando y enlazando...", 'info', true);
             setLinkButtonState('connecting');
 
-            // Le decimos al socket: "en cuanto te conectes, haz esto UNA SOLA VEZ"
             socket.once('connect', () => {
-                // Inmediatamente después de conectar, envía la orden de enlazar esta app.
                 socket.emit('set_active_target', { targetApp: thisAppIdentifier });
             });
 
-            // Ahora sí, iniciamos la conexión.
             connectToServer();
-            return; // Terminamos para no ejecutar el resto del código.
+            return; 
         }
 
-        // --- CASO 2: El panel está conectado y ENLAZADO a esta app ---
         if (toggleLinked) {
-            // Preparamos un mensaje que solo aparecerá si la operación tarda más de 500ms.
             unlinkingTimeout = setTimeout(() => {
                 showMessage('Desvinculando...', 'info', true, 2000);
-            }, 500); // Medio segundo de espera
-
+            }, 500); 
             socket.emit('clear_active_target');
             return;
         }
 
-        // --- CASO 3: El panel está conectado, PERO NO ENLAZADO a esta app ---
-        // (Por ejemplo, está enlazado a otra app o a ninguna)
         socket.emit('set_active_target', { targetApp: thisAppIdentifier });
-        setLinkButtonState('connecting'); // Mostramos un estado de 'cargando' mientras se confirma el enlace.
+        setLinkButtonState('connecting'); 
     }
 
     function importFileToProject(filePackage) {
@@ -364,12 +353,10 @@ window.onload = function() {
                 storage.setDowpPath(result);
                 showMessage(`Ruta guardada correctamente.`, 'success', true, 3000);
 
-                // --- REEMPLAZA setTimeout(() => connectToServer(), 1000); CON ESTO ---
                 btnLaunch.classList.remove('is-disabled');
                 btnLink.classList.remove('is-disabled');
-                setState('disconnected'); // Cambiamos al estado normal de desconectado
-                connectToServer(); // Y ahora sí, intentamos conectar por primera vez
-                // --- FIN DEL REEMPLAZO ---
+                setState('disconnected');
+                connectToServer(); 
             } else {
                 showMessage("Configuración cancelada.", 'warning', true, 3000);
             }
@@ -426,7 +413,6 @@ window.onload = function() {
     }
 
     function updateTimelineState(hasActiveTimeline) {
-        // Si el estado de la línea de tiempo no ha cambiado, no hacemos nada.
         if (lastTimelineState === hasActiveTimeline) return;
 
         lastTimelineState = hasActiveTimeline;
@@ -436,15 +422,12 @@ window.onload = function() {
             addToTimelineContainer.title = "Añadir a la línea de tiempo activa";
         } else {
             addToTimelineContainer.title = "No hay una secuencia/composición activa";
-            // Si la línea de tiempo se vuelve inactiva, nos aseguramos de que el checkbox se desmarque.
             if (addToTimelineCheckbox.checked) {
                 addToTimelineCheckbox.checked = false;
-                // Disparamos el evento 'change' para que se actualice el color y el brillo.
                 addToTimelineCheckbox.dispatchEvent(new Event('change'));
             }
         }
 
-        // Sincronizamos el estado del brillo por si acaso.
         setTimelineActiveState(hasActiveTimeline, { strong: addToTimelineCheckbox.checked });
     }
 
@@ -462,24 +445,15 @@ window.onload = function() {
     }
 
     addToTimelineCheckbox.addEventListener('change', () => {
-        // Primero, ajustamos el color de fondo del botón
         if (addToTimelineCheckbox.checked) {
             addToTimelineContainer.classList.add('is-active');
         } else {
             addToTimelineContainer.classList.remove('is-active');
         }
 
-        // Inmediatamente después, llamamos a nuestra función para actualizar el brillo.
-        // Usamos 'lastTimelineState' para saber si hay una secuencia activa.
         setTimelineActiveState(lastTimelineState, { strong: addToTimelineCheckbox.checked });
     });
 
-    // --- PEGA ESTAS TRES FUNCIONES ANTES DE initializeApp() ---
-
-    /**
-     * Compara dos strings de versión (ej. "1.2.0" vs "1.10.0").
-     * Devuelve 1 si v2 > v1, -1 si v1 > v2, 0 si son iguales.
-     */
     function compareVersions(v1, v2) {
         const parts1 = v1.split('.').map(Number);
         const parts2 = v2.split('.').map(Number);
@@ -494,9 +468,6 @@ window.onload = function() {
         return 0;
     }
 
-    /**
-     * Muestra la notificación de actualización en el área de logs del panel.
-     */
     function showUpdateNotification(manifest) {
         const logArea = document.getElementById('log-text');
         if (logArea) {
@@ -506,16 +477,12 @@ window.onload = function() {
             if (updateLink) {
                 updateLink.addEventListener('click', (e) => {
                     e.preventDefault();
-                    // Usamos el método seguro de CEP para abrir URLs
                     csInterface.openURLInDefaultBrowser(manifest.release_notes_url);
                 });
             }
         }
     }
 
-    /**
-     * Función principal que busca el manifiesto de actualización y lo procesa.
-     */
     async function checkForUpdates() {
         try {
             const response = await fetch(UPDATE_MANIFEST_URL);
@@ -524,7 +491,6 @@ window.onload = function() {
             }
             const manifest = await response.json();
 
-            // Comparamos la versión del manifiesto con la nuestra
             if (compareVersions(CURRENT_EXTENSION_VERSION, manifest.extension_version) === 1) {
                 console.log("Nueva versión de la extensión encontrada:", manifest.extension_version);
                 showUpdateNotification(manifest);
@@ -546,15 +512,12 @@ window.onload = function() {
             checkActiveTimeline();
             setupEventListeners();
 
-            // --- LÓGICA DE INICIALIZACIÓN MEJORADA ---
             if (!storage.getDowpPath()) {
-                // Si no hay ruta, entramos en modo configuración
                 setState('unconfigured');
                 setLinkButtonState('disconnected');
                 btnLaunch.classList.add('is-disabled');
                 btnLink.classList.add('is-disabled');
             } else {
-                // Si ya hay ruta, procedemos como siempre
                 setState('disconnected');
                 setLinkButtonState('disconnected');
                 connectToServer();

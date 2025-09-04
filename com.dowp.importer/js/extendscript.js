@@ -104,17 +104,13 @@ function getActiveTimelineInfo() {
                 info.playheadTime = sequence.getPlayerPosition().seconds;
             }
         } else if (host === "Adobe After Effects") {
-            // Forzamos el estado a 'activo' para After Effects si hay un proyecto abierto.
             info.hasActiveTimeline = app.project ? true : false;
-            info.playheadTime = 0; // Usamos un tiempo por defecto.
-
-            // Intentamos obtener el tiempo real si es posible, pero sin que afecte al estado del botón.
+            info.playheadTime = 0; 
             try {
                 if (app.activeViewer && app.activeViewer.activeComp) {
                 info.playheadTime = app.activeViewer.activeComp.time;
                 }
             } catch (e) {
-                // No pasa nada si falla, el botón seguirá activo.
             }
         }
     } catch (e) {
