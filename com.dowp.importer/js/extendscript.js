@@ -104,18 +104,17 @@ function getActiveTimelineInfo() {
                 info.playheadTime = sequence.getPlayerPosition().seconds;
             }
         } else if (host === "Adobe After Effects") {
-            if (app.project && app.project.activeItem && app.project.activeItem instanceof CompItem) {
-                var comp = app.project.activeItem;
-                try {
-                    var currentTime = comp.time;
-                    var duration = comp.duration;
-                    if (comp.width > 0 && comp.height > 0) {
-                        info.hasActiveTimeline = true;
-                        info.playheadTime = currentTime;
-                    }
-                } catch (e) {
-                    info.hasActiveTimeline = false;
+            // Forzamos el estado a 'activo' para After Effects si hay un proyecto abierto.
+            info.hasActiveTimeline = app.project ? true : false;
+            info.playheadTime = 0; // Usamos un tiempo por defecto.
+
+            // Intentamos obtener el tiempo real si es posible, pero sin que afecte al estado del botón.
+            try {
+                if (app.activeViewer && app.activeViewer.activeComp) {
+                info.playheadTime = app.activeViewer.activeComp.time;
                 }
+            } catch (e) {
+                // No pasa nada si falla, el botón seguirá activo.
             }
         }
     } catch (e) {
@@ -434,13 +433,15 @@ function importForAfterEffects(filePaths, addToTimeline, playheadTime) {
     }
 
     if (addToTimeline && mediaItems.length > 0) {
-        var comp = app.project.activeItem;
-        if (comp && comp instanceof CompItem) {
+        var comp = (app.activeViewer && app.activeViewer.activeComp) ? app.activeViewer.activeComp : null;
+        if (comp) {
             for (var m = 0; m < mediaItems.length; m++) {
                 var newLayer = comp.layers.add(mediaItems[m]);
                 newLayer.startTime = playheadTime;
                 newLayer.moveToBeginning();
             }
+        } else {
+            return "No hay una composición activa para importar los archivos.";
         }
     }
 

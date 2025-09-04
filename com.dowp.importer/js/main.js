@@ -1,5 +1,7 @@
 window.onload = function() {
     const csInterface = new CSInterface();
+    const CURRENT_EXTENSION_VERSION = "1.1.2";
+    const UPDATE_MANIFEST_URL = "https://raw.githubusercontent.com/tu-usuario/tu-repositorio/main/update.json";
     const serverUrl = "http://127.0.0.1:7788";
     let thisAppName = "Desconocido";
     let thisAppIdentifier = "unknown";
@@ -9,19 +11,15 @@ window.onload = function() {
     let lastTimelineState = null;
     let checkingTimeline = false;
 
-    let currentState = 'disconnected';
+    let currentState = 'unconfigured';
     let isLaunching = false;
     let launchTimeout = null;
-    
+    let unlinkingTimeout = null;
+
     let messageQueue = [];
     let currentMessageType = 'info';
     let messageTimeout = null;
     let isShowingPersistentMessage = false;
-
-    let connectionAttempts = 0;
-    let maxConnectionAttempts = 3;
-    let isInStoppedState = false;
-    let lastConnectionAttemptTime = 0;
 
     const statusIndicator = document.getElementById('status-indicator');
     const logText = document.getElementById('log-text');
@@ -71,6 +69,9 @@ window.onload = function() {
         if (isShowingPersistentMessage) return;
         
         switch (currentState) {
+            case 'unconfigured':
+                showMessage(`Hola, haz clic en ⚙️ para configurar DowP.`, 'info');
+                break;
             case 'connecting':
                 showMessage("Conectando con DowP...", 'info');
                 break;
@@ -193,21 +194,13 @@ window.onload = function() {
         const el = _resolveTimelineElement();
         if (!el) return;
 
-        el.classList.remove('glow-active','glow-strong','glow-pulse','glow-blue','glow-orange');
+        // 1. Siempre eliminamos todas las clases de brillo para empezar de cero.
+        el.classList.remove('glow-active', 'glow-strong', 'glow-pulse');
 
-        if (active) {
-            el.classList.add('glow-active', 'glow-pulse');
-
-            if (options.strong) el.classList.add('glow-strong');
-
-            if (options.color === 'blue') el.classList.add('glow-blue');
-            else if (options.color === 'orange') el.classList.add('glow-orange');
-
-            el.setAttribute('title', 'Añadir a la línea de tiempo (activo)');
-            el.setAttribute('aria-pressed', options.strong ? 'true' : 'false');
-        } else {
-            el.setAttribute('title', 'Añadir a la línea de tiempo');
-            el.setAttribute('aria-pressed', 'false');
+        // 2. Solo aplicamos clases si la línea de tiempo está activa y el checkbox está marcado.
+        const isStrong = options.strong || false;
+        if (active && isStrong) {
+            el.classList.add('glow-active', 'glow-strong', 'glow-pulse');
         }
     }
 
@@ -220,17 +213,12 @@ window.onload = function() {
             updateStatusMessage();
             setLinkButtonState('connecting');
         }
-        if (isInStoppedState) return;
-        connectionAttempts++;
-        lastConnectionAttemptTime = Date.now();
         socket = io(serverUrl, {
             transports: ['websocket'],
             reconnectionAttempts: 5
         });
         
         socket.on('connect', () => {
-            connectionAttempts = 0;
-            isInStoppedState = false;
             if (isLaunching) {
                 isLaunching = false;
                 if (launchTimeout) {
@@ -251,13 +239,7 @@ window.onload = function() {
         
         socket.on('connect_error', (err) => {
             if (!isLaunching) {
-                if (connectionAttempts >= maxConnectionAttempts) {
-                    isInStoppedState = true;
-                    setState('dowp-closed');
-                    showMessage("DowP no está disponible. Haz clic en 🚀 para iniciarlo.", 'warning', true);
-                } else {
-                    setState('dowp-closed');
-                }
+                setState('dowp-closed');
             }
             setLaunchButtonState('closed');
         });
@@ -273,6 +255,10 @@ window.onload = function() {
     });
         
         socket.on('active_target_update', (data) => {
+            if (unlinkingTimeout) {
+                clearTimeout(unlinkingTimeout);
+                unlinkingTimeout = null;
+            }
             const activeTarget = data.activeTarget;
             if (!activeTarget) {
                 toggleLinked = false;
@@ -297,40 +283,37 @@ window.onload = function() {
     }
 
     function linkToThisApp() {
+        // --- CASO 1: El panel está desconectado ---
         if (!socket || !socket.connected) {
-            showMessage("Conectando a DowP...", 'info', true);
+            showMessage("Conectando y enlazando...", 'info', true);
             setLinkButtonState('connecting');
-            connectToServer();
+
+            // Le decimos al socket: "en cuanto te conectes, haz esto UNA SOLA VEZ"
             socket.once('connect', () => {
+                // Inmediatamente después de conectar, envía la orden de enlazar esta app.
                 socket.emit('set_active_target', { targetApp: thisAppIdentifier });
-                toggleLinked = true;
-                try { updateStatusIndicator(); } catch(e) {}
             });
-            return;
+
+            // Ahora sí, iniciamos la conexión.
+            connectToServer();
+            return; // Terminamos para no ejecutar el resto del código.
         }
 
+        // --- CASO 2: El panel está conectado y ENLAZADO a esta app ---
         if (toggleLinked) {
-            try {
-                socket.disconnect();
-                setLinkButtonState('disconnected');
-            } catch (e) {
-                console.warn('Error al desconectar socket:', e);
-            }
-            toggleLinked = false;
-            showMessage('Desvinculado de DowP.', 'info', true, 3000);
-            setState('disconnected');
+            // Preparamos un mensaje que solo aparecerá si la operación tarda más de 500ms.
+            unlinkingTimeout = setTimeout(() => {
+                showMessage('Desvinculando...', 'info', true, 2000);
+            }, 500); // Medio segundo de espera
+
+            socket.emit('clear_active_target');
             return;
         }
 
-        const linkingTimeout = setTimeout(() => {
-            showMessage("Enlazando...", 'info');
-        }, 500);
-
+        // --- CASO 3: El panel está conectado, PERO NO ENLAZADO a esta app ---
+        // (Por ejemplo, está enlazado a otra app o a ninguna)
         socket.emit('set_active_target', { targetApp: thisAppIdentifier });
-        setLinkButtonState('connecting');
-        socket.once('active_target_update', (data) => {
-            clearTimeout(linkingTimeout);
-        });
+        setLinkButtonState('connecting'); // Mostramos un estado de 'cargando' mientras se confirma el enlace.
     }
 
     function importFileToProject(filePackage) {
@@ -380,7 +363,13 @@ window.onload = function() {
             if (result && result !== "cancel") {
                 storage.setDowpPath(result);
                 showMessage(`Ruta guardada correctamente.`, 'success', true, 3000);
-                setTimeout(() => connectToServer(), 1000);
+
+                // --- REEMPLAZA setTimeout(() => connectToServer(), 1000); CON ESTO ---
+                btnLaunch.classList.remove('is-disabled');
+                btnLink.classList.remove('is-disabled');
+                setState('disconnected'); // Cambiamos al estado normal de desconectado
+                connectToServer(); // Y ahora sí, intentamos conectar por primera vez
+                // --- FIN DEL REEMPLAZO ---
             } else {
                 showMessage("Configuración cancelada.", 'warning', true, 3000);
             }
@@ -396,8 +385,6 @@ window.onload = function() {
 
         isLaunching = true;
         setState('launching');
-        connectionAttempts = 0;
-        isInStoppedState = false;
         
         const safePath = path.replace(/\\/g, '\\\\');
         csInterface.evalScript(`executeDowP("${safePath}", "${thisAppIdentifier}")`);
@@ -439,24 +426,26 @@ window.onload = function() {
     }
 
     function updateTimelineState(hasActiveTimeline) {
-        if (lastTimelineState !== hasActiveTimeline) {
-            lastTimelineState = hasActiveTimeline;
+        // Si el estado de la línea de tiempo no ha cambiado, no hacemos nada.
+        if (lastTimelineState === hasActiveTimeline) return;
 
-            addToTimelineCheckbox.disabled = !hasActiveTimeline;
+        lastTimelineState = hasActiveTimeline;
+        addToTimelineCheckbox.disabled = !hasActiveTimeline;
 
-            if (hasActiveTimeline) {
-                addToTimelineContainer.title = "Añadir a la línea de tiempo activa";
-            } else {
-                addToTimelineContainer.title = "No hay una secuencia/composición activa";
-                if (addToTimelineCheckbox.checked) {
-                    addToTimelineCheckbox.checked = false;
-                    addToTimelineContainer.classList.remove('is-active');
-                }
+        if (hasActiveTimeline) {
+            addToTimelineContainer.title = "Añadir a la línea de tiempo activa";
+        } else {
+            addToTimelineContainer.title = "No hay una secuencia/composición activa";
+            // Si la línea de tiempo se vuelve inactiva, nos aseguramos de que el checkbox se desmarque.
+            if (addToTimelineCheckbox.checked) {
+                addToTimelineCheckbox.checked = false;
+                // Disparamos el evento 'change' para que se actualice el color y el brillo.
+                addToTimelineCheckbox.dispatchEvent(new Event('change'));
             }
-
-            const strong = !!addToTimelineCheckbox.checked;
-            setTimelineActiveState(Boolean(hasActiveTimeline), { strong: strong });
         }
+
+        // Sincronizamos el estado del brillo por si acaso.
+        setTimelineActiveState(hasActiveTimeline, { strong: addToTimelineCheckbox.checked });
     }
 
 
@@ -473,15 +462,79 @@ window.onload = function() {
     }
 
     addToTimelineCheckbox.addEventListener('change', () => {
+        // Primero, ajustamos el color de fondo del botón
         if (addToTimelineCheckbox.checked) {
             addToTimelineContainer.classList.add('is-active');
         } else {
             addToTimelineContainer.classList.remove('is-active');
         }
 
-        const effectiveActive = Boolean(lastTimelineState && addToTimelineCheckbox.checked);
-        setTimelineActiveState(effectiveActive, { strong: addToTimelineCheckbox.checked });
+        // Inmediatamente después, llamamos a nuestra función para actualizar el brillo.
+        // Usamos 'lastTimelineState' para saber si hay una secuencia activa.
+        setTimelineActiveState(lastTimelineState, { strong: addToTimelineCheckbox.checked });
     });
+
+    // --- PEGA ESTAS TRES FUNCIONES ANTES DE initializeApp() ---
+
+    /**
+     * Compara dos strings de versión (ej. "1.2.0" vs "1.10.0").
+     * Devuelve 1 si v2 > v1, -1 si v1 > v2, 0 si son iguales.
+     */
+    function compareVersions(v1, v2) {
+        const parts1 = v1.split('.').map(Number);
+        const parts2 = v2.split('.').map(Number);
+        const len = Math.max(parts1.length, parts2.length);
+
+        for (let i = 0; i < len; i++) {
+            const p1 = parts1[i] || 0;
+            const p2 = parts2[i] || 0;
+            if (p2 > p1) return 1;
+            if (p1 > p2) return -1;
+        }
+        return 0;
+    }
+
+    /**
+     * Muestra la notificación de actualización en el área de logs del panel.
+     */
+    function showUpdateNotification(manifest) {
+        const logArea = document.getElementById('log-text');
+        if (logArea) {
+            logArea.innerHTML = `✨ ¡Versión ${manifest.extension_version} disponible! <a href="#" id="update-link">Descargar</a>`;
+
+            const updateLink = document.getElementById('update-link');
+            if (updateLink) {
+                updateLink.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    // Usamos el método seguro de CEP para abrir URLs
+                    csInterface.openURLInDefaultBrowser(manifest.release_notes_url);
+                });
+            }
+        }
+    }
+
+    /**
+     * Función principal que busca el manifiesto de actualización y lo procesa.
+     */
+    async function checkForUpdates() {
+        try {
+            const response = await fetch(UPDATE_MANIFEST_URL);
+            if (!response.ok) {
+                throw new Error(`Error de red al buscar actualizaciones: ${response.statusText}`);
+            }
+            const manifest = await response.json();
+
+            // Comparamos la versión del manifiesto con la nuestra
+            if (compareVersions(CURRENT_EXTENSION_VERSION, manifest.extension_version) === 1) {
+                console.log("Nueva versión de la extensión encontrada:", manifest.extension_version);
+                showUpdateNotification(manifest);
+            } else {
+                console.log("La extensión está actualizada.");
+            }
+        } catch (error) {
+            console.error("No se pudo comprobar si hay actualizaciones:", error);
+        }
+    }
 
     function initializeApp() {
         csInterface.evalScript('getHostAppName()', (result) => {
@@ -492,10 +545,22 @@ window.onload = function() {
 
             checkActiveTimeline();
             setupEventListeners();
-            setState('disconnected');
-            setLinkButtonState('disconnected');
+
+            // --- LÓGICA DE INICIALIZACIÓN MEJORADA ---
+            if (!storage.getDowpPath()) {
+                // Si no hay ruta, entramos en modo configuración
+                setState('unconfigured');
+                setLinkButtonState('disconnected');
+                btnLaunch.classList.add('is-disabled');
+                btnLink.classList.add('is-disabled');
+            } else {
+                // Si ya hay ruta, procedemos como siempre
+                setState('disconnected');
+                setLinkButtonState('disconnected');
+                connectToServer();
+            }
+
             setTimelineActiveState(Boolean(lastTimelineState), { strong: Boolean(addToTimelineCheckbox.checked) });
-            connectToServer();
 
             setInterval(() => {
                 if (!socket || !socket.connected) {
@@ -515,6 +580,7 @@ window.onload = function() {
                     checkActiveTimeline();
                 }
             }, 800);
+            setTimeout(checkForUpdates, 3000);
         });
     }
 
