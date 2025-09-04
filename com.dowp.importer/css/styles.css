@@ -255,3 +255,9 @@ body {
 
 .glow-blue { box-shadow: 0 10px 28px rgba(47,111,214,0.14); }
 .glow-orange { box-shadow: 0 10px 28px rgba(243,156,18,0.14); }
+
+.is-disabled {
+    opacity: 0.3;
+    cursor: not-allowed;
+    pointer-events: none;
+}

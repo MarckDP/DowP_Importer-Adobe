@@ -100,6 +100,21 @@ def handle_set_active_target(data):
         print(f"INFO: Nuevo objetivo activo establecido: '{CLIENTS[ACTIVE_TARGET_SID]}' (SID: {ACTIVE_TARGET_SID})")
         socketio.emit('active_target_update', {'activeTarget': CLIENTS[ACTIVE_TARGET_SID]})
 
+@socketio.on('clear_active_target')
+def handle_clear_active_target():
+    """Un cliente solicita desvincularse sin desconectarse."""
+    global ACTIVE_TARGET_SID
+
+    # Verificamos si el cliente que envía el mensaje es realmente el que está activo.
+    if request.sid == ACTIVE_TARGET_SID:
+        print(f"INFO: El objetivo activo '{CLIENTS.get(request.sid, 'desconocido')}' (SID: {request.sid}) se ha desvinculado.")
+
+        # Lo ponemos a None para indicar que no hay nadie enlazado.
+        ACTIVE_TARGET_SID = None
+
+        # Informamos a TODOS los paneles conectados sobre el cambio.
+        socketio.emit('active_target_update', {'activeTarget': None})
+
 def run_flask_app():
     """Función que corre el servidor. Usa gevent para WebSockets."""
     print("INFO: Iniciando servidor de integración en el puerto 7788 con WebSockets.")
