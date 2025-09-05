@@ -62,7 +62,7 @@ Lean bien, no sean como la vrg...
 
 Si tienes errores, asegúrate de que:
 - Python esté instalado correctamente
-- Hayas abierto `main.pyw` antes de usar la extensión
+- Hayas abierto `main.pyw` o `main.py` antes de usar la extensión
 - Tengas el modo DEBUG activado
 
 Si sigues teniendo problemas... pues no sé jasjjas, comenta en algún video o algo.
