@@ -1,4 +1,4 @@
-# Manual de Usuario - DowP
+# Manual de Uso - DowP
 
 ## Tabla de Contenidos
 1. [Descripción General](#descripción-general)
