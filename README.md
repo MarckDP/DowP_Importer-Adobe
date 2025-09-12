@@ -28,7 +28,7 @@ Cuenta con solo 4 botones y una luz que muestra el estado:
 
 ## Instalación
 
-Lean bien, no sean como la vrg...
+Ya tengo un video donde hablo sobre su instalación: https://youtu.be/vQj8J0Gr_1I
 
 ### Requisitos previos
 1. **Python**: Necesitas tener Python instalado SÍ O SÍ y en el PATH. Esto lo haces desde el mismo instalador de Python marcando las dos casillas que aparecen abajo. Si no lo hiciste, desinstala y vuelve a instalar xd.
