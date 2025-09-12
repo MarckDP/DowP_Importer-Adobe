@@ -18,7 +18,7 @@ DowP es una interfaz gráfica (GUI) diseñada para simplificar el uso de **yt-dl
 
 ### Características Principales
 - Descarga de videos desde múltiples plataformas
-- Recodificación automática para compatibilidad con editores
+- Recodificación opcional para compatibilidad con editores
 - Extracción y conversión de subtítulos
 - Segmentación de videos
 - Procesamiento de archivos locales
@@ -108,7 +108,9 @@ Gestión completa de subtítulos disponibles:
 
 **Selección de Idioma**
 - Lista todos los idiomas disponibles
-- Muestra formatos por idioma seleccionado
+
+**Formatos**
+- Muestra formatos por el idioma seleccionado
 
 **Tipos de Subtítulos**
 - **Manual**: Creados por el autor del video
@@ -117,21 +119,21 @@ Gestión completa de subtítulos disponibles:
 **Opciones de Descarga**
 - Descarga individual de subtítulos
 - Inclusión automática con el video
-- **Conversión VTT a SRT**: Para archivos `.vtt`, se ofrece conversión al formato estándar SRT
+- **Conversión y estandarización a SRT**: Para formatos diferentes a SRT, se ofrece conversión al formato estándar SRT
 
 #### 🍪 Configuración de Cookies
 Para contenido que requiere autenticación:
 
 **Método Manual**
-- Usa un archivo de cookies exportado
-- Recomendado: [Get Cookies LOCALLY](https://github.com/kairi003/Get-cookies.txt-LOCALLY)
+- Usa un archivo de cookies exportado. Recomendado usar [Get Cookies LOCALLY](https://github.com/kairi003/Get-cookies.txt-LOCALLY) para extraer las cookies de tu navegador de preferencia
 
 **Extracción desde Navegador**
-- Extrae cookies directamente del navegador
+- Extrae cookies directamente del navegador seleccionado
 - **Recomendación**: Usar Firefox para mejor compatibilidad
-- Evita navegadores basados en Chromium por problemas de seguridad
-
-> ⚠️ **Advertencia de Seguridad**: Nunca compartas archivos cookies.txt, contienen tokens de sesión que permiten acceso a tu cuenta.
+- Evita navegadores basados en Chromium por problemas de seguridad (Chrome, Edge, Brave, Opera, etc)
+  
+> [!WARNING]
+> Nunca compartas archivos cookies.txt, contienen tokens de sesión que permiten acceso a tu cuenta.
 
 #### 🔧 Mantenimiento
 Actualiza FFmpeg cuando sea necesario, especialmente después de rechazar actualizaciones automáticas.
@@ -167,16 +169,18 @@ Información detallada para cada opción disponible:
 | Símbolo | Descripción |
 |---------|-------------|
 | ✨ | Óptimo para Adobe Premiere Pro/After Effects |
-| ⚠️ | Posibles problemas de compatibilidad |
+| ⚠️ | Posibles problemas de compatibilidad (Revisar los mensajes de **Advertencias de Compatibilidad**)|
 | `[Streaming]` | Alta calidad pero restrictiva (usar cookies) |
 | `[Combinado]` | Video y audio en un solo archivo |
 | `[Premium]` | Contenido premium (requiere cookies) |
 
-> 💡 **Consejo**: Las opciones marcadas con ✨ no requieren recodificación.
+> [!TIP]
+> Las opciones marcadas con ✨ no requieren recodificación.
+> Sitios como **X** o **Pinterest** suelen entregar siempre videos en codecs compatibles con Premiere o After Effects y no es necesario recodificar.
 
 #### ⚠️ Advertencias de Compatibilidad
 El sistema muestra alertas automáticas sobre:
-- Compatibilidad con Adobe Premiere Pro
+- Compatibilidad con Adobe Premiere Pro / After Effects
 - Necesidad de recodificación
 - Recomendaciones específicas
 
@@ -213,7 +217,8 @@ Accede con el botón **"Importar Archivo Local para Recodificar"**.
 - **Recodificar Audio**: Procesa únicamente el componente sonoro
 - **Mantener archivos originales**: Conserva o elimina archivos fuente
 
-> ⚠️ **Advertencia**: Desactivar "Mantener archivos originales" eliminará TODOS los archivos relacionados (video, miniatura, subtítulos).
+> [!WARNING]
+> Desactivar "Mantener archivos originales" eliminará TODOS los archivos relacionados (video, miniatura, subtítulos).
 
 #### Sistema de Advertencias
 **Códigos de Color**
@@ -242,7 +247,8 @@ Accede con el botón **"Importar Archivo Local para Recodificar"**.
 - Mantener relación de aspecto
 - Opción "No ampliar resolución"
 
-> ⚠️ **Importante**: El cambio de resolución estira el video, no lo recorta. Puede causar distorsión si no se respeta la relación de aspecto.
+> [!WARNING]
+> **Importante**: El cambio de resolución estira el video, no lo recorta. Puede causar distorsión si no se respeta la relación de aspecto.
 
 #### Configuración de Audio
 - **Códec de Audio**: Solo códecs compatibles con el video seleccionado
@@ -318,7 +324,8 @@ DowP implementa un sistema de recuperación de tres niveles:
 **Causa**: URLs de playlist en sitios poco comunes
 **Solución**: Usar URL del video/audio individual específico
 
-> 📝 **Nota**: Las descargas en cola se implementarán en futuras actualizaciones.
+> [!NOTE]
+> Las descargas en cola se implementarán en futuras actualizaciones.
 
 ### Problemas de Recodificación
 
@@ -339,7 +346,7 @@ DowP implementa un sistema de recuperación de tres niveles:
 ## Preguntas Frecuentes
 
 ### ¿Qué sitios son compatibles?
-DowP soporta cualquier sitio compatible con yt-dlp, incluyendo YouTube, Vimeo, Twitch, y muchos más.
+DowP soporta cualquier [sitio compatible](https://github.com/yt-dlp/yt-dlp/blob/master/supportedsites.md) con yt-dlp, incluyendo YouTube, Vimeo, Twitch, y muchos más.
 
 ### ¿Necesito configurar algo para Adobe Premiere?
 Las opciones marcadas con ✨ son directamente compatibles. Para otras, usa las configuraciones de recodificación recomendadas.
@@ -352,11 +359,5 @@ Sí, siempre que no las compartas. Los archivos de cookies contienen tokens de s
 
 ### ¿Qué hago si FFmpeg no funciona?
 Verifica que FFmpeg esté en el PATH del sistema o copia los archivos a la carpeta del programa.
-
----
-
-## Soporte y Actualizaciones
-
-Para reportar problemas o solicitar funcionalidades, contacta al desarrollador a través del repositorio del proyecto.
 
 > 🚀 **Futuras Actualizaciones**: Se planean mejoras en procesamiento en lote, más códecs y optimizaciones de rendimiento.
