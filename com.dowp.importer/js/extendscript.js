@@ -72,7 +72,7 @@ function executeDowP(path, appIdentifier) {
                             ') else if exist "main.py" (\n' +
                             '   start "" python "main.py" "' + appIdentifier + '"\n' +
                             ') else (\n' +
-                            '   mshta "javascript:alert(\'ERROR: No se encontrÃ³ main.pyw ni main.py en la carpeta de DowP.\');close();"\n' +
+                            '   mshta "javascript:alert(\'ERROR: No se encontró main.pyw ni main.py en la carpeta de DowP.\');close();"\n' +
                             ')\n';
         } else {
             scriptFile = new File(tempFolderPath + "/launch_dowp_temp.sh");
@@ -88,7 +88,6 @@ function executeDowP(path, appIdentifier) {
         alert("Error al intentar crear el script lanzador: " + e.toString());
     }
 }
-
 
 function getActiveTimelineInfo() {
     var info = {
@@ -123,11 +122,41 @@ function getActiveTimelineInfo() {
     return JSON.stringify(info);
 }
 
+function clearCacheForExistingItems(filePath, targetBin) {
+    try {
+        for (var i = 1; i <= app.project.numItems; i++) {
+            var item = app.project.item(i);
+            if (item && item.file && item.file.fsName === filePath) {
+                item.replace(item.file);
+                // Alternative approach: remove and re-import
+                // item.remove();
+                // break;
+            }
+        }
+    } catch (e) {
+    }
+}
+
+function isFileRecentlyModified(filePath, thresholdMinutes) {
+    try {
+        var file = new File(filePath);
+        if (!file.exists) return false;
+        
+        var now = new Date();
+        var fileModified = new Date(file.modified);
+        var diffMinutes = (now.getTime() - fileModified.getTime()) / (1000 * 60);
+        
+        return diffMinutes < (thresholdMinutes || 5); 
+    } catch (e) {
+        return false;
+    }
+}
+
 function importFiles(fileListJSON, addToTimeline, playheadTime) {
     try {
         var filePaths = JSON.parse(fileListJSON);
         if (!filePaths || filePaths.length === 0) {
-            return "Error: La lista de archivos estÃ¡ vacÃ­a.";
+            return "Error: La lista de archivos está vacía.";
         }
 
         var host = getHostAppName();
@@ -136,10 +165,10 @@ function importFiles(fileListJSON, addToTimeline, playheadTime) {
         } else if (host === "Adobe Premiere Pro") {
             return importForPremiere(filePaths, addToTimeline, playheadTime);
         } else {
-            return "Error: AplicaciÃ³n no soportada.";
+            return "Error: Aplicación no soportada.";
         }
     } catch (error) {
-        return "Error crÃ­tico en ExtendScript: " + error.toString();
+        return "Error crítico en ExtendScript: " + error.toString();
     }
 }
 
@@ -177,7 +206,7 @@ function importForPremiere(filePaths, addToTimeline, playheadTime) {
 
     if (addToTimeline) {
         var sequence = app.project.activeSequence;
-        if (!sequence) return "Error: No hay una secuencia activa para aÃ±adir el clip.";
+        if (!sequence) return "Error: No hay una secuencia activa para añadir el clip.";
 
         var playheadTimeObject = new Time();
         playheadTimeObject.seconds = playheadTime;
@@ -251,7 +280,7 @@ function detectNeededAudioTracks(projectItem) {
                 return (count <= 2) ? 1 : Math.ceil(count / 2);
             }
         }
-        if (/stereo|estÃ©reo|estereo/i.test(xmp)) return 1;
+        if (/stereo|estéreo|estereo/i.test(xmp)) return 1;
         if (/mono/i.test(xmp)) return 1;
         if (/5\.1|5.1/i.test(xmp)) return 1;
     } catch (e) {
@@ -419,17 +448,54 @@ function importForAfterEffects(filePaths, addToTimeline, playheadTime) {
         var lowerPath = currentPath.toLowerCase();
         
         if (lowerPath.slice(-4) === ".srt") continue;
+        
         try {
+            clearCacheForExistingItems(currentPath, targetBin);
+            
+            if (isFileRecentlyModified(currentPath, 2)) {
+                $.sleep(200); 
+            }
+            
             var importOptions = new ImportOptions(new File(currentPath));
+            
+            if (importOptions.canImportAs && importOptions.canImportAs(ImportAsType.FOOTAGE)) {
+                importOptions.importAs = ImportAsType.FOOTAGE;
+            }
+            
+            importOptions.sequence = false;
+            
             var importedItem = project.importFile(importOptions);
             importedItem.parentFolder = targetBin;
             
+            if (importedItem.file && importedItem.file.exists) {
+                try {
+                    importedItem.replace(importedItem.file);
+                } catch (e) {
+                }
+            }
+            
             if ((importedItem.hasVideo || importedItem.hasAudio) && 
                 lowerPath.slice(-4) !== ".jpg" && 
-                lowerPath.slice(-4) !== ".png") {
+                lowerPath.slice(-4) !== ".png" &&
+                lowerPath.slice(-5) !== ".jpeg") {
                 mediaItems.push(importedItem);
             }
         } catch (e) {
+            try {
+                var file = new File(currentPath);
+                if (file.exists) {
+                    var altImportOptions = new ImportOptions(file);
+                    altImportOptions.forceAlphabetical = false;
+                    var altImportedItem = project.importFile(altImportOptions);
+                    altImportedItem.parentFolder = targetBin;
+                    
+                    if ((altImportedItem.hasVideo || altImportedItem.hasAudio)) {
+                        mediaItems.push(altImportedItem);
+                    }
+                }
+            } catch (e2) {
+                continue;
+            }
         }
     }
 
@@ -437,9 +503,20 @@ function importForAfterEffects(filePaths, addToTimeline, playheadTime) {
         var comp = app.project.activeItem;
         if (comp && comp instanceof CompItem) {
             for (var m = 0; m < mediaItems.length; m++) {
-                var newLayer = comp.layers.add(mediaItems[m]);
-                newLayer.startTime = playheadTime;
-                newLayer.moveToBeginning();
+                try {
+                    var newLayer = comp.layers.add(mediaItems[m]);
+                    newLayer.startTime = playheadTime;
+                    newLayer.moveToBeginning();
+                    
+                    comp.displayStartTime = comp.displayStartTime;
+                } catch (e) {
+                    continue;
+                }
+            }
+            
+            try {
+                comp.openInViewer();
+            } catch (e) {
             }
         }
     }
@@ -447,7 +524,6 @@ function importForAfterEffects(filePaths, addToTimeline, playheadTime) {
     app.endUndoGroup();
     return "success";
 }
-
 
 function getClipDuration(mediaItem) {
     try {
