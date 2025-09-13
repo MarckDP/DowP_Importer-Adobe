@@ -72,7 +72,7 @@ function executeDowP(path, appIdentifier) {
                             ') else if exist "main.py" (\n' +
                             '   start "" python "main.py" "' + appIdentifier + '"\n' +
                             ') else (\n' +
-                            '   mshta "javascript:alert(\'ERROR: No se encontró main.pyw ni main.py en la carpeta de DowP.\');close();"\n' +
+                            '   mshta "javascript:alert(\'ERROR: No se encontrÃ³ main.pyw ni main.py en la carpeta de DowP.\');close();"\n' +
                             ')\n';
         } else {
             scriptFile = new File(tempFolderPath + "/launch_dowp_temp.sh");
@@ -104,13 +104,18 @@ function getActiveTimelineInfo() {
                 info.playheadTime = sequence.getPlayerPosition().seconds;
             }
         } else if (host === "Adobe After Effects") {
-            info.hasActiveTimeline = app.project ? true : false;
-            info.playheadTime = 0; 
-            try {
-                if (app.activeViewer && app.activeViewer.activeComp) {
-                info.playheadTime = app.activeViewer.activeComp.time;
+            if (app.project && app.project.activeItem && app.project.activeItem instanceof CompItem) {
+                var comp = app.project.activeItem;
+                try {
+                    var currentTime = comp.time;
+                    var duration = comp.duration;
+                    if (comp.width > 0 && comp.height > 0) {
+                        info.hasActiveTimeline = true;
+                        info.playheadTime = currentTime;
+                    }
+                } catch (e) {
+                    info.hasActiveTimeline = false;
                 }
-            } catch (e) {
             }
         }
     } catch (e) {
@@ -122,7 +127,7 @@ function importFiles(fileListJSON, addToTimeline, playheadTime) {
     try {
         var filePaths = JSON.parse(fileListJSON);
         if (!filePaths || filePaths.length === 0) {
-            return "Error: La lista de archivos está vacía.";
+            return "Error: La lista de archivos estÃ¡ vacÃ­a.";
         }
 
         var host = getHostAppName();
@@ -131,10 +136,10 @@ function importFiles(fileListJSON, addToTimeline, playheadTime) {
         } else if (host === "Adobe Premiere Pro") {
             return importForPremiere(filePaths, addToTimeline, playheadTime);
         } else {
-            return "Error: Aplicación no soportada.";
+            return "Error: AplicaciÃ³n no soportada.";
         }
     } catch (error) {
-        return "Error crítico en ExtendScript: " + error.toString();
+        return "Error crÃ­tico en ExtendScript: " + error.toString();
     }
 }
 
@@ -172,7 +177,7 @@ function importForPremiere(filePaths, addToTimeline, playheadTime) {
 
     if (addToTimeline) {
         var sequence = app.project.activeSequence;
-        if (!sequence) return "Error: No hay una secuencia activa para añadir el clip.";
+        if (!sequence) return "Error: No hay una secuencia activa para aÃ±adir el clip.";
 
         var playheadTimeObject = new Time();
         playheadTimeObject.seconds = playheadTime;
@@ -246,7 +251,7 @@ function detectNeededAudioTracks(projectItem) {
                 return (count <= 2) ? 1 : Math.ceil(count / 2);
             }
         }
-        if (/stereo|estéreo|estereo/i.test(xmp)) return 1;
+        if (/stereo|estÃ©reo|estereo/i.test(xmp)) return 1;
         if (/mono/i.test(xmp)) return 1;
         if (/5\.1|5.1/i.test(xmp)) return 1;
     } catch (e) {
@@ -429,21 +434,20 @@ function importForAfterEffects(filePaths, addToTimeline, playheadTime) {
     }
 
     if (addToTimeline && mediaItems.length > 0) {
-        var comp = (app.activeViewer && app.activeViewer.activeComp) ? app.activeViewer.activeComp : null;
-        if (comp) {
+        var comp = app.project.activeItem;
+        if (comp && comp instanceof CompItem) {
             for (var m = 0; m < mediaItems.length; m++) {
                 var newLayer = comp.layers.add(mediaItems[m]);
                 newLayer.startTime = playheadTime;
                 newLayer.moveToBeginning();
             }
-        } else {
-            return "No hay una composición activa para importar los archivos.";
         }
     }
 
     app.endUndoGroup();
     return "success";
 }
+
 
 function getClipDuration(mediaItem) {
     try {
