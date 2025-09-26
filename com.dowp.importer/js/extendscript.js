@@ -1,43 +1,74 @@
-if (typeof JSON === "undefined") {
-    JSON = {};
-}
-
-if (typeof JSON.stringify !== "function") {
-    JSON.stringify = function (obj) {
-        if (obj === null) return "null";
-        if (typeof obj === "string") return '"' + obj + '"';
-        if (typeof obj === "number" || typeof obj === "boolean") return obj.toString();
-        if (obj instanceof Array) {
-            var arr = [];
-            for (var i = 0; i < obj.length; i++) {
-                arr.push(JSON.stringify(obj[i]));
-            }
-            return "[" + arr.join(",") + "]";
+(function() {
+    if (typeof JSON === "undefined" || typeof JSON.stringify === "undefined" || typeof JSON.parse === "undefined") {
+        
+        var LocalJSON = {};
+        
+        if (typeof JSON === "undefined") {
+            JSON = {};
         }
-        if (typeof obj === "object") {
-            var props = [];
-            for (var key in obj) {
-                if (obj.hasOwnProperty(key)) {
-                    props.push('"' + key + '":' + JSON.stringify(obj[key]));
+
+        if (typeof JSON.stringify !== "function") {
+            JSON.stringify = function (obj) {
+                try {
+                    if (obj === null) return "null";
+                    if (obj === undefined) return "null"; 
+                    if (typeof obj === "string") return '"' + obj.replace(/"/g, '\\"').replace(/\\/g, '\\\\') + '"';
+                    if (typeof obj === "number") {
+                        if (isNaN(obj) || !isFinite(obj)) return "null";
+                        return obj.toString();
+                    }
+                    if (typeof obj === "boolean") return obj.toString();
+                    if (obj instanceof Array) {
+                        var arr = [];
+                        for (var i = 0; i < obj.length; i++) {
+                            arr.push(JSON.stringify(obj[i]));
+                        }
+                        return "[" + arr.join(",") + "]";
+                    }
+                    if (typeof obj === "object") {
+                        var props = [];
+                        for (var key in obj) {
+                            if (obj.hasOwnProperty(key) && obj[key] !== undefined) {
+                                props.push('"' + key.replace(/"/g, '\\"') + '":' + JSON.stringify(obj[key]));
+                            }
+                        }
+                        return "{" + props.join(",") + "}";
+                    }
+                    return "null";
+                } catch (e) {
+                    return "null";
                 }
-            }
-            return "{" + props.join(",") + "}";
+            };
         }
-        return "null";
-    };
-}
 
-if (typeof JSON.parse !== "function") {
-    JSON.parse = function (str) {
-        return eval("(" + str + ")");
-    };
-}
+        if (typeof JSON.parse !== "function") {
+            JSON.parse = function (str) {
+                try {
+                    if (typeof str !== "string") return null;
+                    if (str === "") return null;
+                    if (str === "undefined") return null;
+                    
+                    str = str.replace(/^\s+|\s+$/g, '');
+                    if (str === "") return null;
+                    
+                    if (!/^[\[\{]/.test(str) && !/^"/.test(str) && !/^-?\d/.test(str) && !/^(true|false|null)$/.test(str)) {
+                        return null;
+                    }
+                    
+                    return eval("(" + str + ")");
+                } catch (e) {
+                    return null;
+                }
+            };
+        }
+    }
+})();
 
 function getHostAppName() {
     try {
-        if (typeof app.appName !== 'undefined' && app.appName.indexOf("After Effects") > -1) {
+        if (typeof app !== 'undefined' && app.appName && app.appName.indexOf("After Effects") > -1) {
             return "Adobe After Effects";
-        } else if (typeof $ !== 'undefined' && $.global.app.isDocumentOpen && $.global.app.isDocumentOpen()) {
+        } else if (typeof $ !== 'undefined' && $.global && $.global.app && $.global.app.isDocumentOpen && $.global.app.isDocumentOpen()) {
             return "Adobe Premiere Pro";
         } else {
             return "unknown";
@@ -48,13 +79,21 @@ function getHostAppName() {
 }
 
 function selectDowPExecutable() {
-    var file = File.openDialog("Selecciona el script lanzador de DowP (.bat o .sh)");
-    if (file) { return file.fsName; }
-    return "cancel";
+    try {
+        var file = File.openDialog("Selecciona el script lanzador de DowP (.bat o .sh)");
+        if (file) { return file.fsName; }
+        return "cancel";
+    } catch (e) {
+        return "cancel";
+    }
 }
 
 function executeDowP(path, appIdentifier) { 
     try {
+        if (!path || !appIdentifier) {
+            return "Error: Parámetros inválidos";
+        }
+        
         var scriptFile;
         var scriptContent = '';
         var isWindows = $.os.indexOf("Windows") > -1;
@@ -84,8 +123,9 @@ function executeDowP(path, appIdentifier) {
         scriptFile.write(scriptContent);
         scriptFile.close();
         scriptFile.execute();
+        return "success";
     } catch (e) {
-        alert("Error al intentar crear el script lanzador: " + e.toString());
+        return "Error al intentar crear el script lanzador: " + e.toString();
     }
 }
 
@@ -94,11 +134,12 @@ function getActiveTimelineInfo() {
         hasActiveTimeline: false,
         playheadTime: 0
     };
+    
     try {
         var host = getHostAppName();
         if (host === "Adobe Premiere Pro") {
-            var sequence = app.project.activeSequence;
-            if (sequence) {
+            if (app.project && app.project.activeSequence) {
+                var sequence = app.project.activeSequence;
                 info.hasActiveTimeline = true;
                 info.playheadTime = sequence.getPlayerPosition().seconds;
             }
@@ -107,7 +148,6 @@ function getActiveTimelineInfo() {
                 var comp = app.project.activeItem;
                 try {
                     var currentTime = comp.time;
-                    var duration = comp.duration;
                     if (comp.width > 0 && comp.height > 0) {
                         info.hasActiveTimeline = true;
                         info.playheadTime = currentTime;
@@ -119,18 +159,22 @@ function getActiveTimelineInfo() {
         }
     } catch (e) {
     }
-    return JSON.stringify(info);
+    
+    try {
+        return JSON.stringify(info);
+    } catch (e) {
+        return '{"hasActiveTimeline":false,"playheadTime":0}';
+    }
 }
 
 function clearCacheForExistingItems(filePath, targetBin) {
     try {
+        if (!filePath || !app.project) return;
+        
         for (var i = 1; i <= app.project.numItems; i++) {
             var item = app.project.item(i);
             if (item && item.file && item.file.fsName === filePath) {
                 item.replace(item.file);
-                // Alternative approach: remove and re-import
-                // item.remove();
-                // break;
             }
         }
     } catch (e) {
@@ -154,8 +198,19 @@ function isFileRecentlyModified(filePath, thresholdMinutes) {
 
 function importFiles(fileListJSON, addToTimeline, playheadTime) {
     try {
-        var filePaths = JSON.parse(fileListJSON);
-        if (!filePaths || filePaths.length === 0) {
+        var filePaths = null;
+        
+        if (!fileListJSON || fileListJSON === "undefined" || fileListJSON === "") {
+            return "Error: La lista de archivos está vacía o es inválida.";
+        }
+        
+        try {
+            filePaths = JSON.parse(fileListJSON);
+        } catch (e) {
+            return "Error: JSON inválido - " + e.toString();
+        }
+        
+        if (!filePaths || !filePaths.length || filePaths.length === 0) {
             return "Error: La lista de archivos está vacía.";
         }
 
@@ -173,98 +228,110 @@ function importFiles(fileListJSON, addToTimeline, playheadTime) {
 }
 
 function getTrackIndex(trackCollection, track) {
-    for (var i = 0; i < trackCollection.numTracks; i++) {
-        if (trackCollection[i] === track) {
-            return i;
+    try {
+        for (var i = 0; i < trackCollection.numTracks; i++) {
+            if (trackCollection[i] === track) {
+                return i;
+            }
         }
+    } catch (e) {
     }
     return -1;
 }
 
 function importForPremiere(filePaths, addToTimeline, playheadTime) {
-    if (!app.project) return "Error: No hay un proyecto abierto en Premiere Pro.";
+    try {
+        if (!app.project) return "Error: No hay un proyecto abierto en Premiere Pro.";
 
-    var project = app.project;
-    var binName = "DowP Imports";
-    var targetBin = null;
+        var project = app.project;
+        var binName = "DowP Imports";
+        var targetBin = null;
 
-    for (var i = 0; i < project.rootItem.children.numItems; i++) {
-        var item = project.rootItem.children[i];
-        if (item.name === binName && item.type === ProjectItemType.BIN) {
-            targetBin = item;
-            break;
+        for (var i = 0; i < project.rootItem.children.numItems; i++) {
+            var item = project.rootItem.children[i];
+            if (item.name === binName && item.type === ProjectItemType.BIN) {
+                targetBin = item;
+                break;
+            }
         }
-    }
-    if (targetBin === null) {
-        targetBin = project.rootItem.createBin(binName);
-    }
+        
+        if (targetBin === null) {
+            targetBin = project.rootItem.createBin(binName);
+        }
 
-    var uidsBeforeImport = getItemUIDs(targetBin);
+        var uidsBeforeImport = getItemUIDs(targetBin);
 
-    project.importFiles(filePaths, true, targetBin, false);
-    $.sleep(500);
+        project.importFiles(filePaths, true, targetBin, false);
+        $.sleep(500);
 
-    if (addToTimeline) {
-        var sequence = app.project.activeSequence;
-        if (!sequence) return "Error: No hay una secuencia activa para añadir el clip.";
+        if (addToTimeline) {
+            var sequence = app.project.activeSequence;
+            if (!sequence) return "Error: No hay una secuencia activa para añadir el clip.";
 
-        var playheadTimeObject = new Time();
-        playheadTimeObject.seconds = playheadTime;
+            var playheadTimeObject = new Time();
+            playheadTimeObject.seconds = playheadTime || 0;
 
-        for (var j = 0; j < targetBin.children.numItems; j++) {
-            var currentItem = targetBin.children[j];
+            for (var j = 0; j < targetBin.children.numItems; j++) {
+                var currentItem = targetBin.children[j];
 
-            if (!uidsBeforeImport.hasOwnProperty(currentItem.nodeId)) {
-                var avDetection = detectAVviaXMP(currentItem);
+                if (!uidsBeforeImport.hasOwnProperty(currentItem.nodeId)) {
+                    var avDetection = detectAVviaXMP(currentItem);
 
-                if (avDetection.video && avDetection.audio) {
-                    handleMixedClipInsert(sequence, playheadTimeObject, currentItem);
-                } else if (avDetection.video && !avDetection.audio) {
-                    var path = currentItem.getMediaPath().toLowerCase();
-                    if (path.match(/\.(jpg|jpeg|png|gif|bmp|tiff|tif)$/i)) {
-                        continue;
-                    }
-                    var vTrack = findAvailableVideoTrack(sequence, playheadTimeObject, currentItem);
-                    if (vTrack) {
-                        vTrack.insertClip(currentItem, playheadTimeObject);
-                    }
-                } else if (!avDetection.video && avDetection.audio) {
-                    var aTrack = findAvailableAudioTrack(sequence, playheadTimeObject, currentItem);
-                    if (aTrack) {
-                        aTrack.insertClip(currentItem, playheadTimeObject);
+                    if (avDetection.video && avDetection.audio) {
+                        handleMixedClipInsert(sequence, playheadTimeObject, currentItem);
+                    } else if (avDetection.video && !avDetection.audio) {
+                        var path = currentItem.getMediaPath().toLowerCase();
+                        if (path.match(/\.(jpg|jpeg|png|gif|bmp|tiff|tif)$/i)) {
+                            continue;
+                        }
+                        var vTrack = findAvailableVideoTrack(sequence, playheadTimeObject, currentItem);
+                        if (vTrack) {
+                            vTrack.insertClip(currentItem, playheadTimeObject);
+                        }
+                    } else if (!avDetection.video && avDetection.audio) {
+                        var aTrack = findAvailableAudioTrack(sequence, playheadTimeObject, currentItem);
+                        if (aTrack) {
+                            aTrack.insertClip(currentItem, playheadTimeObject);
+                        }
                     }
                 }
             }
         }
+        return "success";
+    } catch (error) {
+        return "Error en importForPremiere: " + error.toString();
     }
-    return "success";
 }
 
 function findAvailableVideoTrack(sequence, playheadTimeObject, mediaItem) {
-    var clipDuration = getClipDuration(mediaItem);
-    var clipEndTime = playheadTimeObject.seconds + clipDuration;
+    try {
+        var clipDuration = getClipDuration(mediaItem);
+        var clipEndTime = playheadTimeObject.seconds + clipDuration;
 
-    for (var i = 0; i < sequence.videoTracks.numTracks; i++) {
-        var currentTrack = sequence.videoTracks[i];
-        var isRangeFree = true;
-        for (var j = 0; j < currentTrack.clips.numItems; j++) {
-            var currentClip = currentTrack.clips[j];
-            if (!(clipEndTime <= currentClip.start.seconds || playheadTimeObject.seconds >= currentClip.end.seconds)) {
-                isRangeFree = false;
-                break;
+        for (var i = 0; i < sequence.videoTracks.numTracks; i++) {
+            var currentTrack = sequence.videoTracks[i];
+            var isRangeFree = true;
+            for (var j = 0; j < currentTrack.clips.numItems; j++) {
+                var currentClip = currentTrack.clips[j];
+                if (!(clipEndTime <= currentClip.start.seconds || playheadTimeObject.seconds >= currentClip.end.seconds)) {
+                    isRangeFree = false;
+                    break;
+                }
+            }
+            if (isRangeFree) {
+                return currentTrack;
             }
         }
-        if (isRangeFree) {
-            return currentTrack;
-        }
-    }
 
-    var qeSequence = qe.project.getActiveSequence();
-    if (qeSequence) {
-        var currentVideoTrackCount = sequence.videoTracks.numTracks;
-        qeSequence.addTracks(1, currentVideoTrackCount, 0, 0, 0);
-        app.project.activeSequence = app.project.activeSequence;
-        return sequence.videoTracks[currentVideoTrackCount];
+        var qeSequence = qe.project.getActiveSequence();
+        if (qeSequence) {
+            var currentVideoTrackCount = sequence.videoTracks.numTracks;
+            qeSequence.addTracks(1, currentVideoTrackCount, 0, 0, 0);
+            app.project.activeSequence = app.project.activeSequence;
+            return sequence.videoTracks[currentVideoTrackCount];
+        }
+    } catch (e) {
+        return null;
     }
 
     return null;
@@ -289,240 +356,250 @@ function detectNeededAudioTracks(projectItem) {
 }
 
 function findAvailableAVPair(sequence, playheadTimeObject, mediaItem) {
-    var clipDuration = getClipDuration(mediaItem);
-    var clipEndTime = playheadTimeObject.seconds + clipDuration;
+    try {
+        var clipDuration = getClipDuration(mediaItem);
+        var clipEndTime = playheadTimeObject.seconds + clipDuration;
 
-    var numV = sequence.videoTracks.numTracks;
-    var numA = sequence.audioTracks.numTracks;
-    var neededAudioTracks = detectNeededAudioTracks(mediaItem);
+        var numV = sequence.videoTracks.numTracks;
+        var numA = sequence.audioTracks.numTracks;
+        var neededAudioTracks = detectNeededAudioTracks(mediaItem);
 
-    var maxPairs = Math.min(numV, Math.max(0, numA - (neededAudioTracks - 1)));
+        var maxPairs = Math.min(numV, Math.max(0, numA - (neededAudioTracks - 1)));
 
-    for (var i = 0; i < maxPairs; i++) {
-        var vTrack = sequence.videoTracks[i];
-        var videoFree = true;
-        for (var j = 0; j < vTrack.clips.numItems; j++) {
-            var vClip = vTrack.clips[j];
-            if (!(clipEndTime <= vClip.start.seconds || playheadTimeObject.seconds >= vClip.end.seconds)) {
-                videoFree = false; 
-                break;
-            }
-        }
-        if (!videoFree) continue;
-
-        var audioOk = true;
-        for (var aOff = 0; aOff < neededAudioTracks; aOff++) {
-            var ai = i + aOff;
-            var aTrack = sequence.audioTracks[ai];
-            if (!aTrack) { 
-                audioOk = false; 
-                break; 
-            }
-            for (var k = 0; k < aTrack.clips.numItems; k++) {
-                var aClip = aTrack.clips[k];
-                if (!(clipEndTime <= aClip.start.seconds || playheadTimeObject.seconds >= aClip.end.seconds)) {
-                    audioOk = false; 
+        for (var i = 0; i < maxPairs; i++) {
+            var vTrack = sequence.videoTracks[i];
+            var videoFree = true;
+            for (var j = 0; j < vTrack.clips.numItems; j++) {
+                var vClip = vTrack.clips[j];
+                if (!(clipEndTime <= vClip.start.seconds || playheadTimeObject.seconds >= vClip.end.seconds)) {
+                    videoFree = false; 
                     break;
                 }
             }
-            if (!audioOk) break;
+            if (!videoFree) continue;
+
+            var audioOk = true;
+            for (var aOff = 0; aOff < neededAudioTracks; aOff++) {
+                var ai = i + aOff;
+                var aTrack = sequence.audioTracks[ai];
+                if (!aTrack) { 
+                    audioOk = false; 
+                    break; 
+                }
+                for (var k = 0; k < aTrack.clips.numItems; k++) {
+                    var aClip = aTrack.clips[k];
+                    if (!(clipEndTime <= aClip.start.seconds || playheadTimeObject.seconds >= aClip.end.seconds)) {
+                        audioOk = false; 
+                        break;
+                    }
+                }
+                if (!audioOk) break;
+            }
+            if (audioOk) return i;
         }
-        if (audioOk) return i;
+    } catch (e) {
+        return -1;
     }
 
     return -1;
 }
 
 function handleMixedClipInsert(sequence, playheadTimeObject, mediaItem) {
-    var qeSequence = null;
-    try { 
-        qeSequence = qe.project.getActiveSequence(); 
-    } catch(e) { 
-        qeSequence = null; 
-    }
-
-    var neededAudioTracks = detectNeededAudioTracks(mediaItem);
-    var freeIndex = findAvailableAVPair(sequence, playheadTimeObject, mediaItem);
-
-    if (freeIndex >= 0) {
-        sequence.videoTracks[freeIndex].insertClip(mediaItem, playheadTimeObject);
-        return;
-    }
-
-    var numV = sequence.videoTracks.numTracks;
-    var numA = sequence.audioTracks.numTracks;
-    var desiredIndex = Math.max(numV, numA);
-
-    var needVideoToAdd = Math.max(0, (desiredIndex + 1) - numV);
-    var needAudioToAdd = Math.max(0, (desiredIndex + neededAudioTracks) - numA);
-
-    if (qeSequence) {
-        if (needVideoToAdd > 0) {
-            qeSequence.addTracks(needVideoToAdd, numV, 0, 0, 0);
+    try {
+        var qeSequence = null;
+        try { 
+            qeSequence = qe.project.getActiveSequence(); 
+        } catch(e) { 
+            qeSequence = null; 
         }
-        if (needAudioToAdd > 0) {
-            var baseType = 1;
-            try {
-                var firstTrack = sequence.audioTracks[0];
-                if (firstTrack && firstTrack.audioTrackType) {
-                    var tname = firstTrack.audioTrackType;
-                }
-            } catch (e) {}
-            var currentAudioCount = sequence.audioTracks.numTracks;
-            qeSequence.addTracks(0, 0, needAudioToAdd, baseType, currentAudioCount);
-        }
-        app.project.activeSequence = app.project.activeSequence;
-    }
 
-    var newVIndex = Math.max(desiredIndex, sequence.videoTracks.numTracks - 1);
-    sequence.videoTracks[newVIndex].insertClip(mediaItem, playheadTimeObject);
+        var neededAudioTracks = detectNeededAudioTracks(mediaItem);
+        var freeIndex = findAvailableAVPair(sequence, playheadTimeObject, mediaItem);
+
+        if (freeIndex >= 0) {
+            sequence.videoTracks[freeIndex].insertClip(mediaItem, playheadTimeObject);
+            return;
+        }
+
+        var numV = sequence.videoTracks.numTracks;
+        var numA = sequence.audioTracks.numTracks;
+        var desiredIndex = Math.max(numV, numA);
+
+        var needVideoToAdd = Math.max(0, (desiredIndex + 1) - numV);
+        var needAudioToAdd = Math.max(0, (desiredIndex + neededAudioTracks) - numA);
+
+        if (qeSequence) {
+            if (needVideoToAdd > 0) {
+                qeSequence.addTracks(needVideoToAdd, numV, 0, 0, 0);
+            }
+            if (needAudioToAdd > 0) {
+                var baseType = 1;
+                var currentAudioCount = sequence.audioTracks.numTracks;
+                qeSequence.addTracks(0, 0, needAudioToAdd, baseType, currentAudioCount);
+            }
+            app.project.activeSequence = app.project.activeSequence;
+        }
+
+        var newVIndex = Math.max(desiredIndex, sequence.videoTracks.numTracks - 1);
+        sequence.videoTracks[newVIndex].insertClip(mediaItem, playheadTimeObject);
+    } catch (e) {
+    }
 }
 
 function findAvailableAudioTrack(sequence, playheadTimeObject, mediaItem) {
-    var clipDuration = getClipDuration(mediaItem);
-    var clipEndTime = playheadTimeObject.seconds + clipDuration;
+    try {
+        var clipDuration = getClipDuration(mediaItem);
+        var clipEndTime = playheadTimeObject.seconds + clipDuration;
 
-    for (var i = 0; i < sequence.audioTracks.numTracks; i++) {
-        var currentTrack = sequence.audioTracks[i];
-        var isRangeFree = true;
-        for (var j = 0; j < currentTrack.clips.numItems; j++) {
-            var currentClip = currentTrack.clips[j];
-            if (!(clipEndTime <= currentClip.start.seconds || playheadTimeObject.seconds >= currentClip.end.seconds)) {
-                isRangeFree = false;
-                break;
+        for (var i = 0; i < sequence.audioTracks.numTracks; i++) {
+            var currentTrack = sequence.audioTracks[i];
+            var isRangeFree = true;
+            for (var j = 0; j < currentTrack.clips.numItems; j++) {
+                var currentClip = currentTrack.clips[j];
+                if (!(clipEndTime <= currentClip.start.seconds || playheadTimeObject.seconds >= currentClip.end.seconds)) {
+                    isRangeFree = false;
+                    break;
+                }
+            }
+            if (isRangeFree) {
+                return currentTrack;
             }
         }
-        if (isRangeFree) {
-            return currentTrack;
+
+        var qeSequence = qe.project.getActiveSequence();
+        if (qeSequence) {
+            var firstTrack = sequence.audioTracks[0];
+            var baseType = firstTrack.audioTrackType;
+
+            var audioTypeMap = {
+                "Mono": 0,
+                "Stereo": 1,
+                "5.1": 2,
+                "Adaptive": 3
+            };
+
+            var audioType = audioTypeMap[baseType] !== undefined ? audioTypeMap[baseType] : 1;
+
+            var vCount = sequence.videoTracks.numTracks;
+            var aCount = sequence.audioTracks.numTracks;
+
+            qeSequence.addTracks(0, vCount, 1, audioType, aCount);
+
+            return sequence.audioTracks[sequence.audioTracks.numTracks - 1];
         }
-    }
-
-    var qeSequence = qe.project.getActiveSequence();
-    if (qeSequence) {
-        var firstTrack = sequence.audioTracks[0];
-        var baseType = firstTrack.audioTrackType;
-
-        var audioTypeMap = {
-            "Mono": 0,
-            "Stereo": 1,
-            "5.1": 2,
-            "Adaptive": 3
-        };
-
-        var audioType = audioTypeMap[baseType] !== undefined ? audioTypeMap[baseType] : 1;
-
-        var vCount = sequence.videoTracks.numTracks;
-        var aCount = sequence.audioTracks.numTracks;
-
-        qeSequence.addTracks(0, vCount, 1, audioType, aCount);
-
-        return sequence.audioTracks[sequence.audioTracks.numTracks - 1];
+    } catch (e) {
+        return null;
     }
 
     return null;
 }
 
 function importForAfterEffects(filePaths, addToTimeline, playheadTime) {
-    if (!app.project) return "Error: No hay un proyecto abierto en After Effects.";
-    
-    app.beginUndoGroup("Importar desde DowP");
-    var project = app.project;
-    var binName = "DowP Imports";
-    var targetBin = null;
+    try {
+        if (!app.project) return "Error: No hay un proyecto abierto en After Effects.";
+        
+        app.beginUndoGroup("Importar desde DowP");
+        var project = app.project;
+        var binName = "DowP Imports";
+        var targetBin = null;
 
-    for (var i = 1; i <= project.numItems; i++) {
-        var item = project.item(i);
-        if (item.name === binName && item instanceof FolderItem) {
-            targetBin = item;
-            break;
+        for (var i = 1; i <= project.numItems; i++) {
+            var item = project.item(i);
+            if (item.name === binName && item instanceof FolderItem) {
+                targetBin = item;
+                break;
+            }
         }
-    }
-    if (targetBin === null) {
-        targetBin = project.items.addFolder(binName);
-    }
-    
-    var mediaItems = [];
-    
-    for (var j = 0; j < filePaths.length; j++) {
-        var currentPath = filePaths[j];
-        var lowerPath = currentPath.toLowerCase();
+        if (targetBin === null) {
+            targetBin = project.items.addFolder(binName);
+        }
         
-        if (lowerPath.slice(-4) === ".srt") continue;
+        var mediaItems = [];
         
-        try {
-            clearCacheForExistingItems(currentPath, targetBin);
+        for (var j = 0; j < filePaths.length; j++) {
+            var currentPath = filePaths[j];
+            var lowerPath = currentPath.toLowerCase();
             
-            if (isFileRecentlyModified(currentPath, 2)) {
-                $.sleep(200); 
-            }
+            if (lowerPath.slice(-4) === ".srt") continue;
             
-            var importOptions = new ImportOptions(new File(currentPath));
-            
-            if (importOptions.canImportAs && importOptions.canImportAs(ImportAsType.FOOTAGE)) {
-                importOptions.importAs = ImportAsType.FOOTAGE;
-            }
-            
-            importOptions.sequence = false;
-            
-            var importedItem = project.importFile(importOptions);
-            importedItem.parentFolder = targetBin;
-            
-            if (importedItem.file && importedItem.file.exists) {
-                try {
-                    importedItem.replace(importedItem.file);
-                } catch (e) {
-                }
-            }
-            
-            if ((importedItem.hasVideo || importedItem.hasAudio) && 
-                lowerPath.slice(-4) !== ".jpg" && 
-                lowerPath.slice(-4) !== ".png" &&
-                lowerPath.slice(-5) !== ".jpeg") {
-                mediaItems.push(importedItem);
-            }
-        } catch (e) {
             try {
-                var file = new File(currentPath);
-                if (file.exists) {
-                    var altImportOptions = new ImportOptions(file);
-                    altImportOptions.forceAlphabetical = false;
-                    var altImportedItem = project.importFile(altImportOptions);
-                    altImportedItem.parentFolder = targetBin;
-                    
-                    if ((altImportedItem.hasVideo || altImportedItem.hasAudio)) {
-                        mediaItems.push(altImportedItem);
+                clearCacheForExistingItems(currentPath, targetBin);
+                
+                if (isFileRecentlyModified(currentPath, 2)) {
+                    $.sleep(200); 
+                }
+                
+                var importOptions = new ImportOptions(new File(currentPath));
+                
+                if (importOptions.canImportAs && importOptions.canImportAs(ImportAsType.FOOTAGE)) {
+                    importOptions.importAs = ImportAsType.FOOTAGE;
+                }
+                
+                importOptions.sequence = false;
+                
+                var importedItem = project.importFile(importOptions);
+                importedItem.parentFolder = targetBin;
+                
+                if (importedItem.file && importedItem.file.exists) {
+                    try {
+                        importedItem.replace(importedItem.file);
+                    } catch (e) {
                     }
                 }
-            } catch (e2) {
-                continue;
-            }
-        }
-    }
-
-    if (addToTimeline && mediaItems.length > 0) {
-        var comp = app.project.activeItem;
-        if (comp && comp instanceof CompItem) {
-            for (var m = 0; m < mediaItems.length; m++) {
+                
+                if ((importedItem.hasVideo || importedItem.hasAudio) && 
+                    lowerPath.slice(-4) !== ".jpg" && 
+                    lowerPath.slice(-4) !== ".png" &&
+                    lowerPath.slice(-5) !== ".jpeg") {
+                    mediaItems.push(importedItem);
+                }
+            } catch (e) {
                 try {
-                    var newLayer = comp.layers.add(mediaItems[m]);
-                    newLayer.startTime = playheadTime;
-                    newLayer.moveToBeginning();
-                    
-                    comp.displayStartTime = comp.displayStartTime;
-                } catch (e) {
+                    var file = new File(currentPath);
+                    if (file.exists) {
+                        var altImportOptions = new ImportOptions(file);
+                        altImportOptions.forceAlphabetical = false;
+                        var altImportedItem = project.importFile(altImportOptions);
+                        altImportedItem.parentFolder = targetBin;
+                        
+                        if ((altImportedItem.hasVideo || altImportedItem.hasAudio)) {
+                            mediaItems.push(altImportedItem);
+                        }
+                    }
+                } catch (e2) {
                     continue;
                 }
             }
-            
-            try {
-                comp.openInViewer();
-            } catch (e) {
+        }
+
+        if (addToTimeline && mediaItems.length > 0) {
+            var comp = app.project.activeItem;
+            if (comp && comp instanceof CompItem) {
+                for (var m = 0; m < mediaItems.length; m++) {
+                    try {
+                        var newLayer = comp.layers.add(mediaItems[m]);
+                        newLayer.startTime = playheadTime || 0;
+                        newLayer.moveToBeginning();
+                        
+                        comp.displayStartTime = comp.displayStartTime;
+                    } catch (e) {
+                        continue;
+                    }
+                }
+                
+                try {
+                    comp.openInViewer();
+                } catch (e) {
+                }
             }
         }
-    }
 
-    app.endUndoGroup();
-    return "success";
+        app.endUndoGroup();
+        return "success";
+    } catch (error) {
+        app.endUndoGroup();
+        return "Error en importForAfterEffects: " + error.toString();
+    }
 }
 
 function getClipDuration(mediaItem) {
@@ -541,8 +618,11 @@ function getClipDuration(mediaItem) {
 
 function getItemUIDs(bin) {
     var uids = {};
-    for (var i = 0; i < bin.children.numItems; i++) {
-        uids[bin.children[i].nodeId] = true; 
+    try {
+        for (var i = 0; i < bin.children.numItems; i++) {
+            uids[bin.children[i].nodeId] = true; 
+        }
+    } catch (e) {
     }
     return uids;
 }
@@ -553,12 +633,13 @@ function detectAVviaXMP(projectItem) {
 
     try {
         var xmp = projectItem.getProjectMetadata();
-
-        if (xmp.indexOf("<premierePrivateProjectMetaData:Column.Intrinsic.VideoInfo>") !== -1) {
-            hasVideo = true;
-        }
-        if (xmp.indexOf("<premierePrivateProjectMetaData:Column.Intrinsic.AudioInfo>") !== -1) {
-            hasAudio = true;
+        if (xmp) {
+            if (xmp.indexOf("<premierePrivateProjectMetaData:Column.Intrinsic.VideoInfo>") !== -1) {
+                hasVideo = true;
+            }
+            if (xmp.indexOf("<premierePrivateProjectMetaData:Column.Intrinsic.AudioInfo>") !== -1) {
+                hasAudio = true;
+            }
         }
     } catch (e) {
     }
