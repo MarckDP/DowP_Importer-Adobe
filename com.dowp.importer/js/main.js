@@ -1,7 +1,7 @@
 window.onload = function() {
     const csInterface = new CSInterface();
     const CURRENT_EXTENSION_VERSION = "1.1.2";
-    const UPDATE_MANIFEST_URL = "https://raw.githubusercontent.com/MarckDP/DowP_Importer-Adobe/refs/heads/v1.1.2/update.json";
+    const UPDATE_MANIFEST_URL = "https://raw.githubusercontent.com/MarckDP/DowP_Importer-Adobe/refs/heads/main/update.json";
     const serverUrl = "http://127.0.0.1:7788";
     let thisAppName = "Desconocido";
     let thisAppIdentifier = "unknown";
@@ -551,4 +551,5 @@ window.onload = function() {
     btnLaunch.onclick = launchDowP;
     btnSettings.onclick = setDowPPath;
     initializeApp();
+
 };
