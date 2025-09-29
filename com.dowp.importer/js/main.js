@@ -1,6 +1,6 @@
 window.onload = function() {
     const csInterface = new CSInterface();
-    const CURRENT_EXTENSION_VERSION = "1.1.3";
+    const CURRENT_EXTENSION_VERSION = "1.1.4";
     const UPDATE_MANIFEST_URL = "https://raw.githubusercontent.com/MarckDP/DowP_Importer-Adobe/refs/heads/main/update.json";
     const serverUrl = "http://127.0.0.1:7788";
     let thisAppName = "Desconocido";
@@ -28,6 +28,8 @@ window.onload = function() {
     const btnSettings = document.getElementById('btn-settings');
     const addToTimelineCheckbox = document.getElementById('add-to-timeline-checkbox');
     const addToTimelineContainer = document.getElementById('add-to-timeline-container');
+    const importImagesCheckbox = document.getElementById('import-images-checkbox');
+    const importImagesContainer = document.getElementById('import-images-container');
 
     const storage = {
         getDowpPath: () => localStorage.getItem('dowpPath'),
@@ -319,12 +321,13 @@ window.onload = function() {
         showMessage(`Importando ${filesToImport.length} archivo(s)...`, 'info', true);
         const fileListJSON = JSON.stringify(filesToImport);
         const shouldAddToTimeline = addToTimelineCheckbox.checked;
+        const shouldImportImages = importImagesCheckbox.checked;
 
         if (shouldAddToTimeline) {
             csInterface.evalScript('getActiveTimelineInfo()', (result) => {
                 const timelineInfo = JSON.parse(result);
                 if (timelineInfo.hasActiveTimeline) {
-                    csInterface.evalScript(`importFiles('${fileListJSON}', true, ${timelineInfo.playheadTime})`, (importResult) => {
+                    csInterface.evalScript(`importFiles('${fileListJSON}', true, ${timelineInfo.playheadTime}, ${shouldImportImages})`, (importResult) => {
                         handleImportResult(importResult);
                     });
                 } else {
@@ -332,7 +335,7 @@ window.onload = function() {
                 }
             });
         } else {
-            csInterface.evalScript(`importFiles('${fileListJSON}', false, 0)`, (importResult) => {
+            csInterface.evalScript(`importFiles('${fileListJSON}', false, 0, false)`, (importResult) => {
                 handleImportResult(importResult);
             });
         }
@@ -445,62 +448,155 @@ window.onload = function() {
     }
 
     addToTimelineCheckbox.addEventListener('change', () => {
-        if (addToTimelineCheckbox.checked) {
+        const isChecked = addToTimelineCheckbox.checked;
+
+        importImagesCheckbox.disabled = !isChecked;
+
+        if (isChecked) {
             addToTimelineContainer.classList.add('is-active');
+            importImagesContainer.classList.remove('is-disabled');
         } else {
             addToTimelineContainer.classList.remove('is-active');
+            importImagesContainer.classList.add('is-disabled');
+            if (importImagesCheckbox.checked) {
+                importImagesCheckbox.checked = false;
+                importImagesCheckbox.dispatchEvent(new Event('change'));
+            }
         }
-
-        setTimelineActiveState(lastTimelineState, { strong: addToTimelineCheckbox.checked });
+        setTimelineActiveState(lastTimelineState, { strong: isChecked });
     });
 
-    function compareVersions(v1, v2) {
-        const parts1 = v1.split('.').map(Number);
-        const parts2 = v2.split('.').map(Number);
-        const len = Math.max(parts1.length, parts2.length);
-
-        for (let i = 0; i < len; i++) {
-            const p1 = parts1[i] || 0;
-            const p2 = parts2[i] || 0;
-            if (p2 > p1) return 1;
-            if (p1 > p2) return -1;
+    importImagesCheckbox.addEventListener('change', () => {
+        if (importImagesCheckbox.checked) {
+            importImagesContainer.classList.add('is-active');
+        } else {
+            importImagesContainer.classList.remove('is-active');
         }
+    });
+
+    function compareVersions(currentVersion, remoteVersion) {
+        console.log(`Comparando versiones: actual=${currentVersion}, remota=${remoteVersion}`);
+        
+        const current = currentVersion.split('.').map(Number);
+        const remote = remoteVersion.split('.').map(Number);
+        const maxLength = Math.max(current.length, remote.length);
+
+        for (let i = 0; i < maxLength; i++) {
+            const currentPart = current[i] || 0;
+            const remotePart = remote[i] || 0;
+            
+            if (remotePart > currentPart) {
+                console.log(`Nueva versión disponible: ${remoteVersion} > ${currentVersion}`);
+                return 1; 
+            }
+            if (currentPart > remotePart) {
+                console.log(`Versión actual es más nueva: ${currentVersion} > ${remoteVersion}`);
+                return -1; 
+            }
+        }
+        
+        console.log(`Versiones iguales: ${currentVersion} = ${remoteVersion}`);
         return 0;
     }
 
     function showUpdateNotification(manifest) {
+        console.log("Mostrando notificación de actualización:", manifest);
+        
         const logArea = document.getElementById('log-text');
-        if (logArea) {
-            logArea.innerHTML = `✨ ¡Versión ${manifest.extension_version} disponible! <a href="#" id="update-link">Descargar</a>`;
+        if (!logArea) {
+            console.error("No se encontró el elemento log-text");
+            return;
+        }
 
-            const updateLink = document.getElementById('update-link');
-            if (updateLink) {
-                updateLink.addEventListener('click', (e) => {
-                    e.preventDefault();
-                    csInterface.openURLInDefaultBrowser(manifest.release_notes_url);
-                });
-            }
+        const updateMessage = `✨ ¡Versión ${manifest.extension_version} disponible! <a href="#" id="update-link" style="color: #0066cc; text-decoration: underline;">Descargar</a>`;
+        
+        logArea.innerHTML = updateMessage;
+        
+        const updateLink = document.getElementById('update-link');
+        if (updateLink) {
+            updateLink.addEventListener('click', (e) => {
+                e.preventDefault();
+                console.log("Abriendo URL de descarga:", manifest.release_notes_url || manifest.download_url);
+                
+                const urlToOpen = manifest.release_notes_url || manifest.download_url || manifest.url;
+                if (urlToOpen) {
+                    csInterface.openURLInDefaultBrowser(urlToOpen);
+                } else {
+                    console.error("No se encontró URL válida en el manifest");
+                    alert("No se pudo abrir la página de descarga. Revisa manualmente en GitHub.");
+                }
+            });
+            
+            setTimeout(() => {
+                if (logArea.innerHTML === updateMessage) {
+                    updateStatusMessage();
+                }
+            }, 15000);
         }
     }
-
     async function checkForUpdates() {
+        console.log("Iniciando verificación de actualizaciones...");
+        console.log(`Versión actual: ${CURRENT_EXTENSION_VERSION}`);
+        console.log(`URL del manifest: ${UPDATE_MANIFEST_URL}`);
+        
         try {
-            const response = await fetch(UPDATE_MANIFEST_URL);
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 10000); 
+            
+            const response = await fetch(UPDATE_MANIFEST_URL, {
+                signal: controller.signal,
+                cache: 'no-cache',
+                headers: {
+                    'Cache-Control': 'no-cache',
+                    'Pragma': 'no-cache'
+                }
+            });
+            
+            clearTimeout(timeoutId);
+            
             if (!response.ok) {
-                throw new Error(`Error de red al buscar actualizaciones: ${response.statusText}`);
+                throw new Error(`Error HTTP ${response.status}: ${response.statusText}`);
             }
+            
             const manifest = await response.json();
-
-            if (compareVersions(CURRENT_EXTENSION_VERSION, manifest.extension_version) === 1) {
-                console.log("Nueva versión de la extensión encontrada:", manifest.extension_version);
-                showUpdateNotification(manifest);
-            } else {
-                console.log("La extensión está actualizada.");
+            console.log("Manifest obtenido:", manifest);
+            
+            if (!manifest.extension_version) {
+                console.error("El manifest no contiene extension_version");
+                return;
             }
+            
+            const comparisonResult = compareVersions(CURRENT_EXTENSION_VERSION, manifest.extension_version);
+            
+            if (comparisonResult === 1) {
+                console.log("Nueva versión encontrada, mostrando notificación");
+                showUpdateNotification(manifest);
+            } else if (comparisonResult === 0) {
+                console.log("La extensión está actualizada");
+            } else {
+                console.log("La versión actual es más nueva que la remota (¿versión de desarrollo?)");
+            }
+            
         } catch (error) {
-            console.error("No se pudo comprobar si hay actualizaciones:", error);
+            if (error.name === 'AbortError') {
+                console.error("Timeout al verificar actualizaciones");
+            } else {
+                console.error("Error al verificar actualizaciones:", error);
+            }
         }
     }
+
+    function forceUpdateCheck() {
+        console.log("Verificación manual de actualizaciones forzada");
+        checkForUpdates();
+    }
+
+    window.debugUpdates = {
+        forceCheck: forceUpdateCheck,
+        currentVersion: CURRENT_EXTENSION_VERSION,
+        manifestUrl: UPDATE_MANIFEST_URL,
+        compareVersions: compareVersions
+    };
 
     function initializeApp() {
         csInterface.evalScript('getHostAppName()', (result) => {
@@ -551,6 +647,4 @@ window.onload = function() {
     btnLaunch.onclick = launchDowP;
     btnSettings.onclick = setDowPPath;
     initializeApp();
-
 };
-

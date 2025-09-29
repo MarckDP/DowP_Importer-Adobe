@@ -117,9 +117,10 @@ body {
     cursor: not-allowed;
 }
 
-#add-to-timeline-checkbox {
+.checkbox-container input[type="checkbox"] {
     display: none;
 }
+
 @keyframes pulse-launching {
     0%, 100% {
         transform: scale(1);

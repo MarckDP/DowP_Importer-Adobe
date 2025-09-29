@@ -196,7 +196,7 @@ function isFileRecentlyModified(filePath, thresholdMinutes) {
     }
 }
 
-function importFiles(fileListJSON, addToTimeline, playheadTime) {
+function importFiles(fileListJSON, addToTimeline, playheadTime, importImagesToTimeline) {
     try {
         var filePaths = null;
         
@@ -216,9 +216,9 @@ function importFiles(fileListJSON, addToTimeline, playheadTime) {
 
         var host = getHostAppName();
         if (host === "Adobe After Effects") {
-            return importForAfterEffects(filePaths, addToTimeline, playheadTime);
+            return importForAfterEffects(filePaths, addToTimeline, playheadTime, importImagesToTimeline);
         } else if (host === "Adobe Premiere Pro") {
-            return importForPremiere(filePaths, addToTimeline, playheadTime);
+            return importForPremiere(filePaths, addToTimeline, playheadTime, importImagesToTimeline);
         } else {
             return "Error: Aplicación no soportada.";
         }
@@ -239,7 +239,7 @@ function getTrackIndex(trackCollection, track) {
     return -1;
 }
 
-function importForPremiere(filePaths, addToTimeline, playheadTime) {
+function importForPremiere(filePaths, addToTimeline, playheadTime, importImagesToTimeline) {
     try {
         if (!app.project) return "Error: No hay un proyecto abierto en Premiere Pro.";
 
@@ -281,7 +281,7 @@ function importForPremiere(filePaths, addToTimeline, playheadTime) {
                         handleMixedClipInsert(sequence, playheadTimeObject, currentItem);
                     } else if (avDetection.video && !avDetection.audio) {
                         var path = currentItem.getMediaPath().toLowerCase();
-                        if (path.match(/\.(jpg|jpeg|png|gif|bmp|tiff|tif)$/i)) {
+                        if (!importImagesToTimeline && path.match(/\.(jpg|jpeg|png|gif|bmp|tiff|tif)$/i)) {
                             continue;
                         }
                         var vTrack = findAvailableVideoTrack(sequence, playheadTimeObject, currentItem);
@@ -494,7 +494,7 @@ function findAvailableAudioTrack(sequence, playheadTimeObject, mediaItem) {
     return null;
 }
 
-function importForAfterEffects(filePaths, addToTimeline, playheadTime) {
+function importForAfterEffects(filePaths, addToTimeline, playheadTime, importImagesToTimeline) { 
     try {
         if (!app.project) return "Error: No hay un proyecto abierto en After Effects.";
         
@@ -547,10 +547,9 @@ function importForAfterEffects(filePaths, addToTimeline, playheadTime) {
                     }
                 }
                 
-                if ((importedItem.hasVideo || importedItem.hasAudio) && 
-                    lowerPath.slice(-4) !== ".jpg" && 
-                    lowerPath.slice(-4) !== ".png" &&
-                    lowerPath.slice(-5) !== ".jpeg") {
+                var isImage = lowerPath.slice(-5) === ".jpeg" || lowerPath.slice(-4) === ".jpg" || lowerPath.slice(-4) === ".png";
+
+                if ( (importedItem.hasVideo || importedItem.hasAudio) && (!isImage || importImagesToTimeline) ) {
                     mediaItems.push(importedItem);
                 }
             } catch (e) {
