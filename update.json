@@ -1,10 +1,10 @@
 {
-  "extension_version": "1.1.4",
-  "extension_url": "https://github.com/MarckDP/DowP_Importer-Adobe/releases/download/v1.1.4",
-  "dowp_app_version": "1.2.0",
-  "dowp_app_url": "https://github.com/MarckDP/DowP_Importer-Adobe/releases/download/DowP_app_v1.2.0/DowP_app_v1.2.0.zip",
-  "release_notes_url": "https://github.com/MarckDP/DowP_Importer-Adobe/releases/latest"
+  "extension_version": "1.1.5",
+  "prerelease": false,
+  "release_notes_url": "https://github.com/MarckDP/DowP_Importer-Adobe/releases/tag/v1.1.5",
+  "download_url": "https://github.com/MarckDP/DowP_Importer-Adobe/releases/download/v1.1.5/DowP_Importer_1.1.5.zxp"
 }
+
 
 
 
