@@ -1,6 +1,6 @@
 window.onload = function() {
     const csInterface = new CSInterface();
-    const CURRENT_EXTENSION_VERSION = "1.1.4";
+    const CURRENT_EXTENSION_VERSION = "1.1.5";
     const UPDATE_MANIFEST_URL = "https://raw.githubusercontent.com/MarckDP/DowP_Importer-Adobe/refs/heads/main/update.json";
     const serverUrl = "http://127.0.0.1:7788";
     let thisAppName = "Desconocido";
@@ -21,6 +21,10 @@ window.onload = function() {
     let messageTimeout = null;
     let isShowingPersistentMessage = false;
 
+    let isUpdateNoticeActive = false;
+    let updateManifestData = null;
+    let updateNoticeTimeout = null;
+
     const statusIndicator = document.getElementById('status-indicator');
     const logText = document.getElementById('log-text');
     const btnLink = document.getElementById('btn-check');
@@ -32,8 +36,36 @@ window.onload = function() {
     const importImagesContainer = document.getElementById('import-images-container');
 
     const storage = {
-        getDowpPath: () => localStorage.getItem('dowpPath'),
-        setDowpPath: (path) => localStorage.setItem('dowpPath', path)
+        getDowpPath: () => {
+            return new Promise((resolve) => {
+                csInterface.evalScript('loadConfig("dowpPath")', (result) => {
+                    if (result && result !== "null" && result !== "") {
+                        resolve(result);
+                    } else {
+                        const legacy = localStorage.getItem('dowpPath');
+                        if (legacy) {
+                            storage.setDowpPath(legacy);
+                            resolve(legacy);
+                        } else {
+                            resolve(null);
+                        }
+                    }
+                });
+            });
+        },
+        
+        setDowpPath: (path) => {
+            return new Promise((resolve) => {
+                csInterface.evalScript(`saveConfig("dowpPath", "${path.replace(/\\/g, '\\\\')}")`, (result) => {
+                    if (result === "success") {
+                        localStorage.setItem('dowpPath', path);
+                        resolve(true);
+                    } else {
+                        resolve(false);
+                    }
+                });
+            });
+        }
     };
 
     function showMessage(text, type = 'info', persistent = false, duration = 0) {
@@ -69,7 +101,11 @@ window.onload = function() {
 
     function updateStatusMessage() {
         if (isShowingPersistentMessage) return;
-        
+
+        if (isUpdateNoticeActive) {
+            return;
+        }
+            
         switch (currentState) {
             case 'unconfigured':
                 showMessage(`Hola, haz clic en ⚙️ para configurar DowP.`, 'info');
@@ -101,6 +137,18 @@ window.onload = function() {
                 break;
         }
     }
+
+    function clearUpdateNotice() {
+        if (isUpdateNoticeActive) {
+            isUpdateNoticeActive = false;
+            if (updateNoticeTimeout) {
+                clearTimeout(updateNoticeTimeout);
+                updateNoticeTimeout = null;
+            }
+            updateStatusMessage(); 
+        }
+    }
+
     function updateStatusIndicator() {
         let className = currentState;
         
@@ -283,6 +331,7 @@ window.onload = function() {
     }
 
     function linkToThisApp() {
+        clearUpdateNotice();
         if (!socket || !socket.connected) {
             showMessage("Conectando y enlazando...", 'info', true);
             setLinkButtonState('connecting');
@@ -349,25 +398,30 @@ window.onload = function() {
         }
     }
 
-    function setDowPPath() {
-        showMessage("Selecciona el script lanzador (run_dowp.bat o .sh)...", 'info', true);
-        csInterface.evalScript('selectDowPExecutable()', (result) => {
+    async function setDowPPath() {
+        clearUpdateNotice();
+        showMessage("Selecciona el ejecutable de DowP (DowP.exe)", 'info', true);
+        csInterface.evalScript('selectDowPExecutable()', async (result) => {
             if (result && result !== "cancel") {
-                storage.setDowpPath(result);
-                showMessage(`Ruta guardada correctamente.`, 'success', true, 3000);
-
-                btnLaunch.classList.remove('is-disabled');
-                btnLink.classList.remove('is-disabled');
-                setState('disconnected');
-                connectToServer(); 
+                const saved = await storage.setDowpPath(result);
+                if (saved) {
+                    showMessage(`Ruta guardada correctamente.`, 'success', true, 3000);
+                    btnLaunch.classList.remove('is-disabled');
+                    btnLink.classList.remove('is-disabled');
+                    setState('disconnected');
+                    connectToServer();
+                } else {
+                    showMessage(`Error al guardar la configuración.`, 'error', true, 5000);
+                }
             } else {
                 showMessage("Configuración cancelada.", 'warning', true, 3000);
             }
         });
     }
 
-    function launchDowP() {
-        const path = storage.getDowpPath();
+    async function launchDowP() {
+        clearUpdateNotice();
+        const path = await storage.getDowpPath();
         if (!path) {
             showMessage("Primero configura la ruta de DowP con el icono ⚙️.", 'error', true, 5000);
             return;
@@ -499,8 +553,8 @@ window.onload = function() {
         return 0;
     }
 
-    function showUpdateNotification(manifest) {
-        console.log("Mostrando notificación de actualización:", manifest);
+    function showUpdateNotification() {
+        console.log("Mostrando notificación de actualización:", updateManifestData);
         
         const logArea = document.getElementById('log-text');
         if (!logArea) {
@@ -508,7 +562,12 @@ window.onload = function() {
             return;
         }
 
-        const updateMessage = `✨ ¡Versión ${manifest.extension_version} disponible! <a href="#" id="update-link" style="color: #0066cc; text-decoration: underline;">Descargar</a>`;
+        if (updateNoticeTimeout) {
+            clearTimeout(updateNoticeTimeout);
+        }
+        isUpdateNoticeActive = true;
+
+        const updateMessage = `✨ ¡Versión ${updateManifestData.extension_version} disponible! <a href="#" id="update-link" style="color: #0066cc; text-decoration: underline;">Descargar</a>`;
         
         logArea.innerHTML = updateMessage;
         
@@ -517,8 +576,8 @@ window.onload = function() {
             updateLink.addEventListener('click', (e) => {
                 e.preventDefault();
                 console.log("Abriendo URL de descarga:", manifest.release_notes_url || manifest.download_url);
-                
-                const urlToOpen = manifest.release_notes_url || manifest.download_url || manifest.url;
+                clearUpdateNotice(); 
+                const urlToOpen = updateManifestData.release_notes_url || updateManifestData.download_url || updateManifestData.url;
                 if (urlToOpen) {
                     csInterface.openURLInDefaultBrowser(urlToOpen);
                 } else {
@@ -527,11 +586,13 @@ window.onload = function() {
                 }
             });
             
-            setTimeout(() => {
-                if (logArea.innerHTML === updateMessage) {
-                    updateStatusMessage();
+            updateNoticeTimeout = setTimeout(() => {
+                // Solo limpiamos si el usuario no ha hecho nada más
+                if (isUpdateNoticeActive) { 
+                    console.log("El temporizador de 20s para el aviso de actualización ha terminado.");
+                    clearUpdateNotice();
                 }
-            }, 15000);
+            }, 20000); // 20 segundos
         }
     }
     async function checkForUpdates() {
@@ -570,7 +631,8 @@ window.onload = function() {
             
             if (comparisonResult === 1) {
                 console.log("Nueva versión encontrada, mostrando notificación");
-                showUpdateNotification(manifest);
+                updateManifestData = manifest;
+                showUpdateNotification(); 
             } else if (comparisonResult === 0) {
                 console.log("La extensión está actualizada");
             } else {
@@ -598,8 +660,9 @@ window.onload = function() {
         compareVersions: compareVersions
     };
 
-    function initializeApp() {
-        csInterface.evalScript('getHostAppName()', (result) => {
+    async function initializeApp() {
+        isUpdateNoticeActive = false;
+        csInterface.evalScript('getHostAppName()', async (result) => {
             if (result && result !== "unknown") {
                 thisAppName = result.replace("Adobe ", "");
                 thisAppIdentifier = thisAppName.toLowerCase().replace(" pro", "").replace(" ", "");
@@ -608,7 +671,8 @@ window.onload = function() {
             checkActiveTimeline();
             setupEventListeners();
 
-            if (!storage.getDowpPath()) {
+            const dowpPath = await storage.getDowpPath();
+            if (!dowpPath) {
                 setState('unconfigured');
                 setLinkButtonState('disconnected');
                 btnLaunch.classList.add('is-disabled');

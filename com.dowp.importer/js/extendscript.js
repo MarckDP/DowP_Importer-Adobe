@@ -80,7 +80,7 @@ function getHostAppName() {
 
 function selectDowPExecutable() {
     try {
-        var file = File.openDialog("Selecciona el script lanzador de DowP (.bat o .sh)");
+        var file = File.openDialog("Selecciona el ejecutable de DowP (DowP.exe)");
         if (file) { return file.fsName; }
         return "cancel";
     } catch (e) {
@@ -88,44 +88,32 @@ function selectDowPExecutable() {
     }
 }
 
-function executeDowP(path, appIdentifier) { 
+function executeDowP(path, appIdentifier) {
     try {
-        if (!path || !appIdentifier) {
-            return "Error: Parámetros inválidos";
+        var exeFile = new File(path);
+        if (!exeFile.exists) {
+            return "Error: El archivo DowP.exe no se encontró en la ruta especificada: " + path;
         }
-        
-        var scriptFile;
-        var scriptContent = '';
-        var isWindows = $.os.indexOf("Windows") > -1;
-        var tempFolderPath = Folder.temp.fsName;
 
-        if (isWindows) {
-            var fileToRun = new File(path);
-            var folderPath = fileToRun.parent.fsName;
+        if ($.os.indexOf("Windows") > -1) {
+            var scriptFile = new File(Folder.temp.fsName + "/launch_dowp_temp.bat");
+            var scriptContent = '@echo off\n' +
+                                'start "" "' + path + '" "' + appIdentifier + '"\n';
             
-            scriptFile = new File(tempFolderPath + "/launch_dowp_temp.bat");
-            scriptContent = '@echo off\n' +
-                            'cd /d "' + folderPath + '"\n' +
-                            'if exist "main.pyw" (\n' +
-                            '   start "" pythonw "main.pyw" "' + appIdentifier + '"\n' +
-                            ') else if exist "main.py" (\n' +
-                            '   start "" python "main.py" "' + appIdentifier + '"\n' +
-                            ') else (\n' +
-                            '   mshta "javascript:alert(\'ERROR: No se encontró main.pyw ni main.py en la carpeta de DowP.\');close();"\n' +
-                            ')\n';
+            scriptFile.open("w");
+            scriptFile.encoding = "UTF-8";
+            scriptFile.write(scriptContent);
+            scriptFile.close();
+            scriptFile.execute();
+
         } else {
-            scriptFile = new File(tempFolderPath + "/launch_dowp_temp.sh");
-            scriptContent = '#!/bin/bash\n' +
-                            'sh "' + path + '" "' + appIdentifier + '"\n';
+            exeFile.execute();
         }
-        scriptFile.open("w");
-        scriptFile.encoding = "UTF-8";
-        scriptFile.write(scriptContent);
-        scriptFile.close();
-        scriptFile.execute();
+
         return "success";
+
     } catch (e) {
-        return "Error al intentar crear el script lanzador: " + e.toString();
+        return "Error al intentar ejecutar DowP: " + e.toString();
     }
 }
 
@@ -644,4 +632,84 @@ function detectAVviaXMP(projectItem) {
     }
 
     return { video: hasVideo, audio: hasAudio };
+}
+
+// ============================================
+// SISTEMA DE ALMACENAMIENTO PERSISTENTE
+// ============================================
+
+function getConfigFilePath() {
+    try {
+        var userFolder = Folder.userData;
+        var configFolder = new Folder(userFolder.fsName + "/DowP_Importer");
+        
+        if (!configFolder.exists) {
+            configFolder.create();
+        }
+        
+        return configFolder.fsName + "/config.json";
+    } catch (e) {
+        return null;
+    }
+}
+
+function saveConfig(key, value) {
+    try {
+        var configPath = getConfigFilePath();
+        if (!configPath) return "error";
+        
+        var configFile = new File(configPath);
+        var config = {};
+        
+        if (configFile.exists) {
+            configFile.open("r");
+            var content = configFile.read();
+            configFile.close();
+            
+            if (content && content !== "") {
+                try {
+                    config = JSON.parse(content);
+                } catch (e) {
+                    config = {};
+                }
+            }
+        }
+        
+        config[key] = value;
+        
+        configFile.open("w");
+        configFile.encoding = "UTF-8";
+        configFile.write(JSON.stringify(config, null, 2));
+        configFile.close();
+        
+        return "success";
+    } catch (e) {
+        return "error: " + e.toString();
+    }
+}
+
+function loadConfig(key) {
+    try {
+        var configPath = getConfigFilePath();
+        if (!configPath) return null;
+        
+        var configFile = new File(configPath);
+        
+        if (!configFile.exists) {
+            return null;
+        }
+        
+        configFile.open("r");
+        var content = configFile.read();
+        configFile.close();
+        
+        if (!content || content === "") {
+            return null;
+        }
+        
+        var config = JSON.parse(content);
+        return config[key] || null;
+    } catch (e) {
+        return null;
+    }
 }
