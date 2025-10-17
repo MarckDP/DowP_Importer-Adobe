@@ -634,9 +634,7 @@ function detectAVviaXMP(projectItem) {
     return { video: hasVideo, audio: hasAudio };
 }
 
-// ============================================
-// SISTEMA DE ALMACENAMIENTO PERSISTENTE
-// ============================================
+
 
 function getConfigFilePath() {
     try {
@@ -711,5 +709,22 @@ function loadConfig(key) {
         return config[key] || null;
     } catch (e) {
         return null;
+    }
+}
+
+function findDowPExecutable() {
+    try {
+        // Ruta estándar: AppData\Local\DowP\DowP.exe
+        var userFolder = Folder.userData; // C:\Users\[username]\AppData\Roaming
+        var localAppData = new Folder(userFolder.parent.fsName + "\\Local\\DowP");
+        var dowpExe = new File(localAppData.fsName + "\\DowP.exe");
+        
+        if (dowpExe.exists) {
+            return dowpExe.fsName;
+        }
+        
+        return "not_found";
+    } catch (e) {
+        return "error: " + e.toString();
     }
 }

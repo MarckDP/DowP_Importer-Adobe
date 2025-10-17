@@ -1,6 +1,6 @@
 window.onload = function() {
     const csInterface = new CSInterface();
-    const CURRENT_EXTENSION_VERSION = "1.1.5";
+    const CURRENT_EXTENSION_VERSION = "1.1.6";
     const UPDATE_MANIFEST_URL = "https://raw.githubusercontent.com/MarckDP/DowP_Importer-Adobe/refs/heads/main/update.json";
     const serverUrl = "http://127.0.0.1:7788";
     let thisAppName = "Desconocido";
@@ -671,12 +671,29 @@ window.onload = function() {
             checkActiveTimeline();
             setupEventListeners();
 
-            const dowpPath = await storage.getDowpPath();
+            let dowpPath = await storage.getDowpPath();
+            
+            // Si no hay ruta guardada, intentar detectar automáticamente
             if (!dowpPath) {
-                setState('unconfigured');
-                setLinkButtonState('disconnected');
-                btnLaunch.classList.add('is-disabled');
-                btnLink.classList.add('is-disabled');
+                csInterface.evalScript('findDowPExecutable()', async (detectedPath) => {
+                    if (detectedPath && detectedPath !== "not_found" && !detectedPath.startsWith("error")) {
+                        // DowP encontrado automáticamente
+                        dowpPath = detectedPath;
+                        const saved = await storage.setDowpPath(dowpPath);
+                        if (saved) {
+                            showMessage("✓ DowP detectado automáticamente", 'success', true, 3000);
+                            setState('disconnected');
+                            setLinkButtonState('disconnected');
+                            connectToServer();
+                        }
+                    } else {
+                        // DowP no encontrado - pedir al usuario
+                        setState('unconfigured');
+                        setLinkButtonState('disconnected');
+                        btnLaunch.classList.add('is-disabled');
+                        btnLink.classList.add('is-disabled');
+                    }
+                });
             } else {
                 setState('disconnected');
                 setLinkButtonState('disconnected');
@@ -712,3 +729,4 @@ window.onload = function() {
     btnSettings.onclick = setDowPPath;
     initializeApp();
 };
+
