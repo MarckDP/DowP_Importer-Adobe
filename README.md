@@ -26,7 +26,7 @@ Cuenta con solo 5 botones y una luz que muestra el estado:
 
 - **Añadir miniatura a la linea de tiempo** "🖼️": Depende totalemnte de la anterior y sirve para decidir si importar o no las miniaturas descargadas a la línea de tiempo.
 
-- **Configurar** "⚙️": Para buscar y vincular el archivo **"run_dowp.bat"** que se conecta al botón "🚀" para abrir DowP desde la extensión. Siempre hay que realizar este paso en ambos programas **(Ae y Pr)**.
+- **Configurar** "⚙️": Para buscar y vincular el archivo **"DowP.exe"** que se conecta al botón "🚀" para abrir DowP desde la extensión. Siempre hay que realizar este paso en ambos programas **(Ae y Pr)**.
 
 ## Instalación
 Actualemnte solo necesitan un instalador de archivos **"ZXP"**, pero si lo prefieren ya tengo un video donde hablo sobre su instalación antigua: https://youtu.be/vQj8J0Gr_1I
