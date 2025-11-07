@@ -1,6 +1,6 @@
 window.onload = function() {
     const csInterface = new CSInterface();
-    const CURRENT_EXTENSION_VERSION = "1.1.6";
+    const CURRENT_EXTENSION_VERSION = "1.1.8";
     const UPDATE_MANIFEST_URL = "https://raw.githubusercontent.com/MarckDP/DowP_Importer-Adobe/refs/heads/main/update.json";
     const serverUrl = "http://127.0.0.1:7788";
     let thisAppName = "Desconocido";
@@ -8,8 +8,17 @@ window.onload = function() {
     let socket = null;
     let toggleLinked = false;
 
+    let isSocketRegistered = false;
+    let isConnectingAttempt = false;
+
     let lastTimelineState = null;
     let checkingTimeline = false;
+    let lastTimelineCheck = 0;
+    const TIMELINE_CHECK_INTERVAL = 1500; // Debounce: verificar cada 1.5 segundos máximo
+    
+    // Para After Effects: ignorar cambios momentáneos de focus al panel de proyecto
+    let lastSuccessfulTimelineCheck = null;
+    let timelineCheckFailureCount = 0;
 
     let currentState = 'unconfigured';
     let isLaunching = false;
@@ -191,7 +200,7 @@ window.onload = function() {
         case 'disconnected':
         btn.classList.add('state-disconnected');
         btn.title = 'DowP no está abierto';
-        btn.innerHTML = '<span class="icon">⛓️‍💥</span>';
+        btn.innerHTML = '<span class="icon">⛔️👥</span>';
         break;
         case 'connecting':
         btn.classList.add('state-connecting');
@@ -200,13 +209,13 @@ window.onload = function() {
         break;
         case 'connected':
         btn.classList.add('state-connected');
-        btn.title = 'Conectado — pulsa para enlazar';
+        btn.title = 'Conectado – pulsa para enlazar';
         btn.innerHTML = '<span class="icon">🔗</span>';
         break;
         case 'linked-other':
         btn.classList.add('state-linked-other');
         btn.title = 'Enlazado en otra aplicación';
-        btn.innerHTML = '<span class="icon">🔒</span>';
+        btn.innerHTML = '<span class="icon">🔐</span>';
         break;
         case 'linked-me':
         btn.classList.add('state-linked-me');
@@ -216,7 +225,7 @@ window.onload = function() {
         default:
         btn.classList.add('state-disconnected');
         btn.title = '';
-        btn.innerHTML = '<span class="icon">❔</span>';
+        btn.innerHTML = '<span class="icon">❓</span>';
     }
     }
 
@@ -253,8 +262,11 @@ window.onload = function() {
     }
 
     function connectToServer() {
-        if (socket && socket.connected) return;
+        if (socket && (socket.connected || socket.connecting)) return; // <-- Mejora esta línea
+        if (isConnectingAttempt) return; // <-- AÑADE ESTA LÍNEA (El guardián)
         
+        isConnectingAttempt = true; // <-- AÑADE ESTA LÍNEA (Activa el lock)
+
         if (!isLaunching) {
             isShowingPersistentMessage = false;
             setState('connecting');
@@ -267,6 +279,7 @@ window.onload = function() {
         });
         
         socket.on('connect', () => {
+            isConnectingAttempt = false;
             if (isLaunching) {
                 isLaunching = false;
                 if (launchTimeout) {
@@ -276,7 +289,12 @@ window.onload = function() {
                 showMessage("¡DowP iniciado correctamente!", 'success', true, 3000);
             }
             
-            socket.emit('register', { appIdentifier: thisAppIdentifier });
+            // ✅ Solo registrar UNA VEZ por sesión de conexión
+            if (!isSocketRegistered) {
+                socket.emit('register', { appIdentifier: thisAppIdentifier });
+                isSocketRegistered = true;
+            }
+            
             setLaunchButtonState('open');
             setLinkButtonState('connected');
             setLaunchButtonState('open'); 
@@ -291,16 +309,24 @@ window.onload = function() {
             }
             setLaunchButtonState('closed');
         });
+
+        socket.on('reconnect_failed', () => {
+            isConnectingAttempt = false; // <-- Libera el lock en el fallo FINAL
+            console.error("Socket.io: All reconnection attempts failed.");
+            setState('dowp-closed');
+            setLaunchButtonState('closed');
+        });
         
         socket.on('disconnect', () => {
-        toggleLinked = false;
-        isShowingPersistentMessage = false;
-        if (!isLaunching) {
-            setState('disconnected');
-        }
-        setLinkButtonState('disconnected');
-        setLaunchButtonState('closed');
-    });
+            isSocketRegistered = false;  // ← Resetear para la próxima reconexión
+            toggleLinked = false;
+            isShowingPersistentMessage = false;
+            if (!isLaunching) {
+                setState('disconnected');
+            }
+            setLinkButtonState('disconnected');
+            setLaunchButtonState('closed');
+        });
         
         socket.on('active_target_update', (data) => {
             if (unlinkingTimeout) {
@@ -357,36 +383,128 @@ window.onload = function() {
     }
 
     function importFileToProject(filePackage) {
+        // 1. Extraer el nombre de la papelera (bin) de destino del paquete
+        const targetBinName = filePackage.targetBin || null;
+        
+        // ✅ NUEVA LÓGICA: Detectar tipo por extensión
+        const AUDIO_EXTENSIONS = /\.(mp3|m4a|wav|flac|aac|ogg|opus|weba)$/i;
+        const VIDEO_EXTENSIONS = /\.(mp4|mkv|webm|mov|avi|flv|wmv|m4v)$/i;
+        const IMAGE_EXTENSIONS = /\.(jpg|jpeg|png|gif|bmp|tiff|tif)$/i;
+        const SUBTITLE_EXTENSIONS = /\.(srt|vtt|ass|ssa|sub)$/i;
+
+        const classifyFile = (path) => {
+            if (AUDIO_EXTENSIONS.test(path)) return 'audio';
+            if (VIDEO_EXTENSIONS.test(path)) return 'video';
+            if (IMAGE_EXTENSIONS.test(path)) return 'image';
+            if (SUBTITLE_EXTENSIONS.test(path)) return 'subtitle';
+            return 'unknown';
+        };
+
         const filesToImport = [];
-        if (filePackage.video) filesToImport.push(filePackage.video);
-        if (filePackage.thumbnail) filesToImport.push(filePackage.thumbnail);
-        if (filePackage.subtitle) filesToImport.push(filePackage.subtitle);
+        let hasAudio = false;
+        let hasVideo = false;
+        let hasImage = false;
+
+        // ✅ MEJORADO: Clasificar cada archivo por extensión
+        if (filePackage.video) {
+            const type = classifyFile(filePackage.video);
+            console.log("filePackage.video clasificado como:", type, filePackage.video);
+            
+            if (type === 'audio') {
+                hasAudio = true;
+                filesToImport.push(filePackage.video);
+            } else if (type === 'video') {
+                hasVideo = true;
+                filesToImport.push(filePackage.video);
+            } else if (type === 'image') {
+                hasImage = true;
+                filesToImport.push(filePackage.video);
+            }
+        }
+
+        if (filePackage.thumbnail) {
+            const type = classifyFile(filePackage.thumbnail);
+            console.log("filePackage.thumbnail clasificado como:", type, filePackage.thumbnail);
+            
+            if (type !== 'subtitle') {
+                filesToImport.push(filePackage.thumbnail);
+                if (type === 'image') hasImage = true;
+            }
+        }
+
+        if (filePackage.subtitle) {
+            const type = classifyFile(filePackage.subtitle);
+            console.log("filePackage.subtitle clasificado como:", type, filePackage.subtitle);
+            
+            if (type === 'subtitle') {
+                filesToImport.push(filePackage.subtitle);
+            }
+        }
+
+        console.log("Clasificación final - Audio:", hasAudio, "Video:", hasVideo, "Image:", hasImage);
+        console.log("Archivos a importar:", filesToImport);
 
         if (filesToImport.length === 0) {
-            showMessage("Error: No se encontraron archivos para importar.", 'error', true, 5000);
+            // ✅ Si no encontramos nada, verifica si hay ALGO en filePackage
+            console.error("ERROR: filesToImport está vacío");
+            console.error("filePackage.video:", filePackage.video);
+            console.error("filePackage.thumbnail:", filePackage.thumbnail);
+            console.error("filePackage.subtitle:", filePackage.subtitle);
+            console.error("filePackage completo:", JSON.stringify(filePackage));
+            showMessage("Error: DowP no envió ningún archivo. Verifica que la descarga fue exitosa.", 'error', true, 5000);
             return;
         }
 
         showMessage(`Importando ${filesToImport.length} archivo(s)...`, 'info', true);
+        
+        // ✅ SEGURIDAD: Escapar correctamente
+        const escapeForExtendScript = (str) => {
+            return str
+                .replace(/\\/g, '\\\\')
+                .replace(/"/g, '\\"')
+                .replace(/'/g, "\\'");
+        };
+        
         const fileListJSON = JSON.stringify(filesToImport);
+        const escapedJSON = escapeForExtendScript(fileListJSON);
+        
         const shouldAddToTimeline = addToTimelineCheckbox.checked;
         const shouldImportImages = importImagesCheckbox.checked;
 
+        // 2. Preparar el nombre de la papelera para ExtendScript (será null o "nombre")
+        const escapedBinName = targetBinName ? `"${escapeForExtendScript(targetBinName)}"` : "null";
+
         if (shouldAddToTimeline) {
             csInterface.evalScript('getActiveTimelineInfo()', (result) => {
-                const timelineInfo = JSON.parse(result);
-                if (timelineInfo.hasActiveTimeline) {
-                    csInterface.evalScript(`importFiles('${fileListJSON}', true, ${timelineInfo.playheadTime}, ${shouldImportImages})`, (importResult) => {
-                        handleImportResult(importResult);
-                    });
-                } else {
-                    showMessage("Error: No hay secuencia/composición activa.", 'error', true, 5000);
+                try {
+                    const timelineInfo = JSON.parse(result);
+                    if (timelineInfo.hasActiveTimeline) {
+                        console.log("Timeline activa encontrada. Playhead:", timelineInfo.playheadTime);
+                        csInterface.evalScript(
+                            `importFiles("${escapedJSON}", true, ${timelineInfo.playheadTime}, ${shouldImportImages}, ${escapedBinName})`, // <-- AÑADIDO
+                            (importResult) => {
+                                console.log("Resultado de importación:", importResult);
+                                handleImportResult(importResult);
+                            }
+                        );
+                    } else {
+                        showMessage("Error: No hay secuencia/composición activa.", 'error', true, 5000);
+                        console.error("No timeline activa");
+                    }
+                } catch (e) {
+                    showMessage(`Error al procesar timeline: ${e.message}`, 'error', true, 5000);
+                    console.error("Error procesando timeline:", e);
                 }
             });
         } else {
-            csInterface.evalScript(`importFiles('${fileListJSON}', false, 0, false)`, (importResult) => {
-                handleImportResult(importResult);
-            });
+            console.log("Importando sin timeline, archivo(s):", filesToImport);
+            csInterface.evalScript(
+                `importFiles("${escapedJSON}", false, 0, ${shouldImportImages}, ${escapedBinName})`, // <-- AÑADIDO
+                (importResult) => {
+                    console.log("Resultado de importación (sin timeline):", importResult);
+                    handleImportResult(importResult);
+                }
+            );
         }
     }
 
@@ -447,6 +565,14 @@ window.onload = function() {
     }
 
     function checkActiveTimeline() {
+        const now = Date.now();
+        
+        // Debounce: solo ejecutar si ha pasado suficiente tiempo desde la última verificación
+        if (now - lastTimelineCheck < TIMELINE_CHECK_INTERVAL) {
+            return;
+        }
+        lastTimelineCheck = now;
+        
         if (checkingTimeline) return;
         
         checkingTimeline = true;
@@ -462,7 +588,24 @@ window.onload = function() {
             
             try {
                 const info = JSON.parse(result);
-                updateTimelineState(info.hasActiveTimeline);
+                
+                // Si AHORA hay timeline activa, resetear contador de fallos
+                if (info.hasActiveTimeline) {
+                    lastSuccessfulTimelineCheck = info;
+                    timelineCheckFailureCount = 0;
+                    updateTimelineState(true);
+                } else {
+                    // Si NO hay timeline, pero hace poco SÍ la había, ignorar cambio momentáneo
+                    if (lastSuccessfulTimelineCheck && timelineCheckFailureCount < 5) {
+                        timelineCheckFailureCount++;
+                        // Mantener el estado anterior, NO desactivar
+                        return;
+                    }
+                    // Si han sido 2+ fallos consecutivos, ENTONCES desactivar
+                    timelineCheckFailureCount = 0;
+                    lastSuccessfulTimelineCheck = null;
+                    updateTimelineState(false);
+                }
             } catch (e) {
                 updateTimelineState(false);
             }
@@ -498,6 +641,11 @@ window.onload = function() {
             if (!document.hidden) {
                 checkActiveTimeline();
             }
+        });
+
+        // Nueva verificación cuando el usuario interactúa con el checkbox
+        addToTimelineCheckbox.addEventListener('click', () => {
+            checkActiveTimeline();
         });
     }
 
@@ -587,12 +735,11 @@ window.onload = function() {
             });
             
             updateNoticeTimeout = setTimeout(() => {
-                // Solo limpiamos si el usuario no ha hecho nada más
                 if (isUpdateNoticeActive) { 
                     console.log("El temporizador de 20s para el aviso de actualización ha terminado.");
                     clearUpdateNotice();
                 }
-            }, 20000); // 20 segundos
+            }, 20000);
         }
     }
     async function checkForUpdates() {
@@ -702,9 +849,14 @@ window.onload = function() {
 
             setTimelineActiveState(Boolean(lastTimelineState), { strong: Boolean(addToTimelineCheckbox.checked) });
 
+            // Intervalo principal: conexión y verificaciones periódicas
             setInterval(() => {
+                // Gestión de conexión
                 if (!socket || !socket.connected) {
-                    if (!isLaunching && !isInStoppedState) {
+                    
+                    // V MODIFICA ESTA LÍNEA V
+                    if (!isLaunching && !isConnectingAttempt) {
+                    // ^ AÑADE "!isConnectingAttempt" ^
                         connectToServer();
                     }
                 } else {
@@ -716,10 +868,12 @@ window.onload = function() {
                     }
                 }
 
+                // Verificación de timeline con debounce inteligente
                 if (!checkingTimeline) {
                     checkActiveTimeline();
                 }
             }, 800);
+            
             setTimeout(checkForUpdates, 3000);
         });
     }
@@ -729,4 +883,3 @@ window.onload = function() {
     btnSettings.onclick = setDowPPath;
     initializeApp();
 };
-

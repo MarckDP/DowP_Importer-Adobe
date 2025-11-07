@@ -45,17 +45,25 @@
             JSON.parse = function (str) {
                 try {
                     if (typeof str !== "string") return null;
-                    if (str === "") return null;
-                    if (str === "undefined") return null;
+                    if (str === "" || str === "undefined") return null;
                     
                     str = str.replace(/^\s+|\s+$/g, '');
                     if (str === "") return null;
                     
-                    if (!/^[\[\{]/.test(str) && !/^"/.test(str) && !/^-?\d/.test(str) && !/^(true|false|null)$/.test(str)) {
+                    // ✅ VALIDACIÓN MÁS ESTRICTA antes de ejecutar código
+                    if (!/^[\[\{"]/.test(str) && !/^-?\d/.test(str) && !/^(true|false|null)$/.test(str)) {
+                        console.error("JSON no válido, rechazando para seguridad");
                         return null;
                     }
                     
-                    return eval("(" + str + ")");
+                    // ✅ Usar Function constructor en lugar de eval (más seguro)
+                    // Esto crea una función que retorna el valor, sin acceso al scope global
+                    try {
+                        return new Function("return (" + str + ")")();
+                    } catch (e) {
+                        console.error("Error al parsear JSON:", e);
+                        return null;
+                    }
                 } catch (e) {
                     return null;
                 }
@@ -184,7 +192,7 @@ function isFileRecentlyModified(filePath, thresholdMinutes) {
     }
 }
 
-function importFiles(fileListJSON, addToTimeline, playheadTime, importImagesToTimeline) {
+function importFiles(fileListJSON, addToTimeline, playheadTime, importImagesToTimeline, targetBinName) { // <-- AÑADIDO
     try {
         var filePaths = null;
         
@@ -204,9 +212,9 @@ function importFiles(fileListJSON, addToTimeline, playheadTime, importImagesToTi
 
         var host = getHostAppName();
         if (host === "Adobe After Effects") {
-            return importForAfterEffects(filePaths, addToTimeline, playheadTime, importImagesToTimeline);
+            return importForAfterEffects(filePaths, addToTimeline, playheadTime, importImagesToTimeline, targetBinName); // <-- AÑADIDO
         } else if (host === "Adobe Premiere Pro") {
-            return importForPremiere(filePaths, addToTimeline, playheadTime, importImagesToTimeline);
+            return importForPremiere(filePaths, addToTimeline, playheadTime, importImagesToTimeline, targetBinName); // <-- AÑADIDO
         } else {
             return "Error: Aplicación no soportada.";
         }
@@ -227,28 +235,48 @@ function getTrackIndex(trackCollection, track) {
     return -1;
 }
 
-function importForPremiere(filePaths, addToTimeline, playheadTime, importImagesToTimeline) {
+function importForPremiere(filePaths, addToTimeline, playheadTime, importImagesToTimeline, targetBinName) { // <-- AÑADIDO
     try {
         if (!app.project) return "Error: No hay un proyecto abierto en Premiere Pro.";
 
         var project = app.project;
-        var binName = "DowP Imports";
-        var targetBin = null;
+        var mainBinName = "DowP Imports"; // <-- Renombrado
+        var mainBin = null; // <-- Renombrado
 
         for (var i = 0; i < project.rootItem.children.numItems; i++) {
             var item = project.rootItem.children[i];
-            if (item.name === binName && item.type === ProjectItemType.BIN) {
-                targetBin = item;
+            if (item.name === mainBinName && item.type === ProjectItemType.BIN) {
+                mainBin = item; // <-- Renombrado
                 break;
             }
         }
         
-        if (targetBin === null) {
-            targetBin = project.rootItem.createBin(binName);
+        if (mainBin === null) { // <-- Renombrado
+            mainBin = project.rootItem.createBin(mainBinName); // <-- Renombrado
+        }
+
+        // --- INICIO DE NUEVO CÓDIGO ---
+        var targetBin = mainBin; // Por defecto, importamos a la carpeta principal
+        
+        // Si nos pasaron un nombre de subcarpeta...
+        if (targetBinName) {
+            var subBin = null;
+            // Buscar si ya existe la subcarpeta
+            for (var j = 0; j < mainBin.children.numItems; j++) {
+                var subItem = mainBin.children[j];
+                if (subItem.name === targetBinName && subItem.type === ProjectItemType.BIN) {
+                    subBin = subItem;
+                    break;
+                }
+            }
+            // Si no existe, crearla
+            if (subBin === null) {
+                subBin = mainBin.createBin(targetBinName);
+            }
+            targetBin = subBin; // Establecer la subcarpeta como el destino final
         }
 
         var uidsBeforeImport = getItemUIDs(targetBin);
-
         project.importFiles(filePaths, true, targetBin, false);
         $.sleep(500);
 
@@ -264,12 +292,18 @@ function importForPremiere(filePaths, addToTimeline, playheadTime, importImagesT
 
                 if (!uidsBeforeImport.hasOwnProperty(currentItem.nodeId)) {
                     var avDetection = detectAVviaXMP(currentItem);
+                    
+                    // ✅ MEJORADO: Detectar tipo por extensión también
+                    var mediaPath = currentItem.getMediaPath().toLowerCase();
+                    var isAudioFile = /\.(mp3|m4a|wav|flac|aac|ogg|opus|weba)$/i.test(mediaPath);
+                    var isImage = /\.(jpg|jpeg|png|gif|bmp|tiff|tif)$/i.test(mediaPath);
 
                     if (avDetection.video && avDetection.audio) {
+                        // Video con audio
                         handleMixedClipInsert(sequence, playheadTimeObject, currentItem);
                     } else if (avDetection.video && !avDetection.audio) {
-                        var path = currentItem.getMediaPath().toLowerCase();
-                        if (!importImagesToTimeline && path.match(/\.(jpg|jpeg|png|gif|bmp|tiff|tif)$/i)) {
+                        // Solo video
+                        if (!importImagesToTimeline && isImage) {
                             continue;
                         }
                         var vTrack = findAvailableVideoTrack(sequence, playheadTimeObject, currentItem);
@@ -277,9 +311,32 @@ function importForPremiere(filePaths, addToTimeline, playheadTime, importImagesT
                             vTrack.insertClip(currentItem, playheadTimeObject);
                         }
                     } else if (!avDetection.video && avDetection.audio) {
+                        // ✅ Solo audio (detectado por XMP)
                         var aTrack = findAvailableAudioTrack(sequence, playheadTimeObject, currentItem);
                         if (aTrack) {
                             aTrack.insertClip(currentItem, playheadTimeObject);
+                        }
+                    } else if (!avDetection.video && !avDetection.audio) {
+                        // ✅ NUEVO: XMP no detectó nada, intentar por extensión y contenido real
+                        // Esto cubre casos como .mp4 con solo audio
+                        if (isAudioFile) {
+                            // Claramente es audio por extensión
+                            var aTrack = findAvailableAudioTrack(sequence, playheadTimeObject, currentItem);
+                            if (aTrack) {
+                                aTrack.insertClip(currentItem, playheadTimeObject);
+                            }
+                        } else if (!isImage) {
+                            // No es imagen, asumir que es video o contenedor desconocido
+                            // Intentar primero video, si falla intentar audio
+                            var vTrack = findAvailableVideoTrack(sequence, playheadTimeObject, currentItem);
+                            if (vTrack) {
+                                vTrack.insertClip(currentItem, playheadTimeObject);
+                            } else {
+                                var aTrack2 = findAvailableAudioTrack(sequence, playheadTimeObject, currentItem);
+                                if (aTrack2) {
+                                    aTrack2.insertClip(currentItem, playheadTimeObject);
+                                }
+                            }
                         }
                     }
                 }
@@ -290,6 +347,7 @@ function importForPremiere(filePaths, addToTimeline, playheadTime, importImagesT
         return "Error en importForPremiere: " + error.toString();
     }
 }
+
 
 function findAvailableVideoTrack(sequence, playheadTimeObject, mediaItem) {
     try {
@@ -482,24 +540,46 @@ function findAvailableAudioTrack(sequence, playheadTimeObject, mediaItem) {
     return null;
 }
 
-function importForAfterEffects(filePaths, addToTimeline, playheadTime, importImagesToTimeline) { 
+function importForAfterEffects(filePaths, addToTimeline, playheadTime, importImagesToTimeline, targetBinName) { // <-- AÑADIDO
     try {
         if (!app.project) return "Error: No hay un proyecto abierto en After Effects.";
         
         app.beginUndoGroup("Importar desde DowP");
         var project = app.project;
-        var binName = "DowP Imports";
-        var targetBin = null;
+        var mainBinName = "DowP Imports"; // <-- Renombrado
+        var mainBin = null; // <-- Renombrado
 
         for (var i = 1; i <= project.numItems; i++) {
             var item = project.item(i);
-            if (item.name === binName && item instanceof FolderItem) {
-                targetBin = item;
+            if (item.name === mainBinName && item instanceof FolderItem) {
+                mainBin = item; // <-- Renombrado
                 break;
             }
         }
-        if (targetBin === null) {
-            targetBin = project.items.addFolder(binName);
+        if (mainBin === null) { // <-- Renombrado
+            mainBin = project.items.addFolder(mainBinName); // <-- Renombrado
+        }
+        
+        // --- INICIO DE NUEVO CÓDIGO ---
+        var targetBin = mainBin; // Por defecto, importamos a la carpeta principal
+        
+        // Si nos pasaron un nombre de subcarpeta...
+        if (targetBinName) {
+            var subBin = null;
+            // Buscar si ya existe la subcarpeta
+            for (var j = 1; j <= mainBin.numItems; j++) {
+                var subItem = mainBin.item(j);
+                if (subItem.name === targetBinName && subItem instanceof FolderItem) {
+                    subBin = subItem;
+                    break;
+                }
+            }
+            // Si no existe, crearla
+            if (subBin === null) {
+                subBin = project.items.addFolder(targetBinName);
+                subBin.parentFolder = mainBin; // Moverla dentro de la carpeta principal
+            }
+            targetBin = subBin; // Establecer la subcarpeta como el destino final
         }
         
         var mediaItems = [];
@@ -508,7 +588,8 @@ function importForAfterEffects(filePaths, addToTimeline, playheadTime, importIma
             var currentPath = filePaths[j];
             var lowerPath = currentPath.toLowerCase();
             
-            if (lowerPath.slice(-4) === ".srt") continue;
+            // Saltar subtítulos
+            if (/\.(srt|vtt|ass|ssa|sub)$/i.test(lowerPath)) continue;
             
             try {
                 clearCacheForExistingItems(currentPath, targetBin);
@@ -535,10 +616,37 @@ function importForAfterEffects(filePaths, addToTimeline, playheadTime, importIma
                     }
                 }
                 
-                var isImage = lowerPath.slice(-5) === ".jpeg" || lowerPath.slice(-4) === ".jpg" || lowerPath.slice(-4) === ".png";
+                // ✅ MEJORADO: Detectar tipo por extensión
+                var isImage = /\.(jpg|jpeg|png|gif|bmp|tiff|tif)$/i.test(lowerPath);
+                var isAudio = /\.(mp3|m4a|wav|flac|aac|ogg|opus|weba)$/i.test(lowerPath);
+                var isVideo = /\.(mp4|mkv|webm|mov|avi|flv|wmv|m4v)$/i.test(lowerPath);
 
-                if ( (importedItem.hasVideo || importedItem.hasAudio) && (!isImage || importImagesToTimeline) ) {
+                // ✅ DEBUG: Log de qué se importó
+                $.writeln("DEBUG: Importado - " + currentPath);
+                $.writeln("  - hasVideo: " + importedItem.hasVideo);
+                $.writeln("  - hasAudio: " + importedItem.hasAudio);
+                $.writeln("  - isImage: " + isImage);
+                $.writeln("  - isAudio: " + isAudio);
+                $.writeln("  - isVideo: " + isVideo);
+
+                // ✅ 1. Comprobar si es un archivo multimedia válido (video, audio O imagen)
+                var isImportable = importedItem.hasVideo || importedItem.hasAudio || isAudio || isVideo || isImage;
+
+                if (importedItem && isImportable) {
+                    
+                    // ✅ 2. Comprobar si debe saltarse la ADICIÓN A TIMELINE
+                    // (El archivo ya se importó al proyecto líneas arriba)
+                    // Si es una imagen Y el usuario NO quiere imágenes en la timeline -> saltar
+                    if (isImage && !importImagesToTimeline) {
+                        $.writeln("  - SALTADO (Timeline): Imagen y 'importImagesToTimeline' está desactivado.");
+                        continue; // No añadir a mediaItems, ir al siguiente archivo
+                    }
+                    
+                    $.writeln("  - AÑADIDO a mediaItems (para timeline)");
                     mediaItems.push(importedItem);
+                    
+                } else {
+                    $.writeln("  - RECHAZADO: No tiene audio/video y no es extensión reconocida");
                 }
             } catch (e) {
                 try {
@@ -582,6 +690,11 @@ function importForAfterEffects(filePaths, addToTimeline, playheadTime, importIma
         }
 
         app.endUndoGroup();
+        
+        if (mediaItems.length === 0) {
+            return "Error: No se pudieron importar archivos. Verifica que los archivos sean válidos.";
+        }
+        
         return "success";
     } catch (error) {
         app.endUndoGroup();
@@ -620,15 +733,37 @@ function detectAVviaXMP(projectItem) {
 
     try {
         var xmp = projectItem.getProjectMetadata();
+        
         if (xmp) {
-            if (xmp.indexOf("<premierePrivateProjectMetaData:Column.Intrinsic.VideoInfo>") !== -1) {
+            // ✅ BÚSQUEDA MÁS FLEXIBLE: Busca cualquier variación de "VideoInfo"
+            if (xmp.indexOf("VideoInfo") !== -1 || 
+                xmp.indexOf("vcodec") !== -1 ||
+                xmp.indexOf("width") !== -1 ||
+                xmp.indexOf("height") !== -1) {
                 hasVideo = true;
             }
-            if (xmp.indexOf("<premierePrivateProjectMetaData:Column.Intrinsic.AudioInfo>") !== -1) {
+            
+            // ✅ BÚSQUEDA MÁS FLEXIBLE: Busca cualquier variación de "AudioInfo"
+            if (xmp.indexOf("AudioInfo") !== -1 || 
+                xmp.indexOf("acodec") !== -1 ||
+                xmp.indexOf("channels") !== -1 ||
+                xmp.indexOf("audio") !== -1) {
                 hasAudio = true;
             }
+            
+            // ✅ DEBUG: Mostrar qué encontró
+            $.writeln("DEBUG detectAVviaXMP:");
+            $.writeln("  - hasVideo: " + hasVideo);
+            $.writeln("  - hasAudio: " + hasAudio);
+            $.writeln("  - XMP length: " + xmp.length);
+            if (xmp.length > 0 && xmp.length < 500) {
+                $.writeln("  - XMP content: " + xmp);
+            }
+        } else {
+            $.writeln("DEBUG: No XMP metadata found for " + projectItem.name);
         }
     } catch (e) {
+        $.writeln("ERROR in detectAVviaXMP: " + e.toString());
     }
 
     return { video: hasVideo, audio: hasAudio };
@@ -726,5 +861,25 @@ function findDowPExecutable() {
         return "not_found";
     } catch (e) {
         return "error: " + e.toString();
+    }
+}
+
+function importFilesById(fileListId, addToTimeline, playheadTime, importImagesToTimeline) {
+    try {
+        // ✅ Recuperar la lista de archivos desde window (que pasó main.js)
+        // Pero como estamos en ExtendScript, necesitamos acceder via $ (acceso al DOM/host)
+        
+        // En realidad, para ExtendScript llamado desde CEP, necesitamos pasar los datos diferente
+        // Alternativa: Usar una variable global temporal
+        
+        if (typeof gDownloadFileList === "undefined" || !gDownloadFileList) {
+            return "Error: No se encontró lista de archivos";
+        }
+        
+        var filePaths = gDownloadFileList;
+        return importFiles(JSON.stringify(filePaths), addToTimeline, playheadTime, importImagesToTimeline);
+        
+    } catch (error) {
+        return "Error en importFilesById: " + error.toString();
     }
 }
