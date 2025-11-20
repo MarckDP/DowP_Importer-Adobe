@@ -1,6 +1,6 @@
 window.onload = function() {
     const csInterface = new CSInterface();
-    const CURRENT_EXTENSION_VERSION = "1.1.8";
+    const CURRENT_EXTENSION_VERSION = "1.1.9";
     const UPDATE_MANIFEST_URL = "https://raw.githubusercontent.com/MarckDP/DowP_Importer-Adobe/refs/heads/main/update.json";
     const serverUrl = "http://127.0.0.1:7788";
     let thisAppName = "Desconocido";
@@ -8,22 +8,28 @@ window.onload = function() {
     let socket = null;
     let toggleLinked = false;
 
+    // ✅ NUEVO: Estado de conexión centralizado
+    const connectionState = {
+        isConnecting: false,
+        isLaunching: false,
+        lastAttempt: 0,
+        attemptCount: 0,
+        connectionTimeout: null,
+        maxRetries: 3
+    };
+
     let isSocketRegistered = false;
-    let isConnectingAttempt = false;
+    let unlinkingTimeout = null;
 
     let lastTimelineState = null;
     let checkingTimeline = false;
     let lastTimelineCheck = 0;
-    const TIMELINE_CHECK_INTERVAL = 1500; // Debounce: verificar cada 1.5 segundos máximo
+    const TIMELINE_CHECK_INTERVAL = 1500;
     
-    // Para After Effects: ignorar cambios momentáneos de focus al panel de proyecto
     let lastSuccessfulTimelineCheck = null;
     let timelineCheckFailureCount = 0;
 
     let currentState = 'unconfigured';
-    let isLaunching = false;
-    let launchTimeout = null;
-    let unlinkingTimeout = null;
 
     let messageQueue = [];
     let currentMessageType = 'info';
@@ -103,7 +109,6 @@ window.onload = function() {
                     messageTimeout = null;
                     try { updateStatusMessage(); } catch (e) {}
                 }, duration);
-            } else {
             }
         }
     }
@@ -161,7 +166,7 @@ window.onload = function() {
     function updateStatusIndicator() {
         let className = currentState;
         
-        if (isLaunching) {
+        if (connectionState.isLaunching) {
             className = 'launching';
         } else if (currentState === 'linked-other-app') {
             className = 'linked-elsewhere';
@@ -169,6 +174,7 @@ window.onload = function() {
         
         statusIndicator.className = className;
     }
+
     function setState(newState, data = null) {
         const previousState = currentState;
         currentState = newState;
@@ -190,59 +196,59 @@ window.onload = function() {
     }
 
     function setLinkButtonState(state) {
-    const btn = document.getElementById('btn-check');
-    if (!btn) return;
+        const btn = document.getElementById('btn-check');
+        if (!btn) return;
 
-    btn.classList.remove('state-disconnected','state-connecting','state-connected','state-linked-other','state-linked-me');
-    btn.setAttribute('aria-pressed', 'false');
+        btn.classList.remove('state-disconnected','state-connecting','state-connected','state-linked-other','state-linked-me');
+        btn.setAttribute('aria-pressed', 'false');
 
-    switch(state) {
-        case 'disconnected':
-        btn.classList.add('state-disconnected');
-        btn.title = 'DowP no está abierto';
-        btn.innerHTML = '<span class="icon">⛔️👥</span>';
-        break;
-        case 'connecting':
-        btn.classList.add('state-connecting');
-        btn.title = 'Conectando a DowP...';
-        btn.innerHTML = '<span class="icon">⏳</span>';
-        break;
-        case 'connected':
-        btn.classList.add('state-connected');
-        btn.title = 'Conectado – pulsa para enlazar';
-        btn.innerHTML = '<span class="icon">🔗</span>';
-        break;
-        case 'linked-other':
-        btn.classList.add('state-linked-other');
-        btn.title = 'Enlazado en otra aplicación';
-        btn.innerHTML = '<span class="icon">🔐</span>';
-        break;
-        case 'linked-me':
-        btn.classList.add('state-linked-me');
-        btn.title = 'Enlazado contigo';
-        btn.innerHTML = '<span class="icon">✅</span>';
-        break;
-        default:
-        btn.classList.add('state-disconnected');
-        btn.title = '';
-        btn.innerHTML = '<span class="icon">❓</span>';
-    }
+        switch(state) {
+            case 'disconnected':
+                btn.classList.add('state-disconnected');
+                btn.title = 'DowP no está abierto';
+                btn.innerHTML = '<span class="icon">⛔</span>';
+                break;
+            case 'connecting':
+                btn.classList.add('state-connecting');
+                btn.title = 'Conectando a DowP...';
+                btn.innerHTML = '<span class="icon">⏳</span>';
+                break;
+            case 'connected':
+                btn.classList.add('state-connected');
+                btn.title = 'Conectado – pulsa para enlazar';
+                btn.innerHTML = '<span class="icon">🔗</span>';
+                break;
+            case 'linked-other':
+                btn.classList.add('state-linked-other');
+                btn.title = 'Enlazado en otra aplicación';
+                btn.innerHTML = '<span class="icon">🔒</span>';
+                break;
+            case 'linked-me':
+                btn.classList.add('state-linked-me');
+                btn.title = 'Enlazado contigo';
+                btn.innerHTML = '<span class="icon">✅</span>';
+                break;
+            default:
+                btn.classList.add('state-disconnected');
+                btn.title = '';
+                btn.innerHTML = '<span class="icon">❓</span>';
+        }
     }
 
     function setLaunchButtonState(state) {
-    const btn = document.getElementById('btn-launch');
-    if (!btn) return;
-    btn.classList.remove('state-open','state-closed');
+        const btn = document.getElementById('btn-launch');
+        if (!btn) return;
+        btn.classList.remove('state-open','state-closed');
 
-    if (state === 'open') {
-        btn.classList.add('state-open');
-        btn.title = 'DowP abierto';
-        btn.setAttribute('aria-pressed', 'true');
-    } else {
-        btn.classList.add('state-closed');
-        btn.title = 'Iniciar DowP';
-        btn.setAttribute('aria-pressed', 'false');
-    }
+        if (state === 'open') {
+            btn.classList.add('state-open');
+            btn.title = 'DowP abierto';
+            btn.setAttribute('aria-pressed', 'true');
+        } else {
+            btn.classList.add('state-closed');
+            btn.title = 'Iniciar DowP';
+            btn.setAttribute('aria-pressed', 'false');
+        }
     }
 
     function _resolveTimelineElement() {
@@ -261,35 +267,105 @@ window.onload = function() {
         }
     }
 
-    function connectToServer() {
-        if (socket && (socket.connected || socket.connecting)) return; // <-- Mejora esta línea
-        if (isConnectingAttempt) return; // <-- AÑADE ESTA LÍNEA (El guardián)
-        
-        isConnectingAttempt = true; // <-- AÑADE ESTA LÍNEA (Activa el lock)
+    // ✅ NUEVO: Función para resetear el estado de conexión
+    function resetConnectionState() {
+        connectionState.isConnecting = false;
+        connectionState.attemptCount = 0;
+        if (connectionState.connectionTimeout) {
+            clearTimeout(connectionState.connectionTimeout);
+            connectionState.connectionTimeout = null;
+        }
+    }
 
-        if (!isLaunching) {
+    // ✅ NUEVO: Verificar si podemos intentar conectar
+    function canAttemptConnection() {
+        const now = Date.now();
+        const timeSinceLastAttempt = now - connectionState.lastAttempt;
+        
+        if (connectionState.isConnecting) {
+            console.log("⏸️ Conexión ya en progreso");
+            return false;
+        }
+        
+        if (connectionState.isLaunching) {
+            console.log("⏸️ DowP está iniciando");
+            return false;
+        }
+        
+        // ✅ CRÍTICO: Si ya alcanzamos el máximo de reintentos, NUNCA reintentar automáticamente
+        if (connectionState.attemptCount >= connectionState.maxRetries) {
+            console.log("🛑 Máximo de reintentos alcanzado. Se requiere acción manual.");
+            return false;
+        }
+        
+        if (timeSinceLastAttempt < 2000) {
+            console.log("⏸️ Debounce: esperando 2s entre intentos");
+            return false;
+        }
+        
+        return true;
+    }
+
+    // ✅ REFACTORIZADO: Conexión al servidor con protecciones
+    function connectToServer(forceConnection = false) {
+        if (socket && socket.connected) {
+            console.log("✅ Ya conectado al servidor");
+            return;
+        }
+
+        if (!forceConnection && !canAttemptConnection()) {
+            return;
+        }
+
+        console.log("🔌 Iniciando conexión al servidor...");
+        
+        connectionState.isConnecting = true;
+        connectionState.lastAttempt = Date.now();
+        connectionState.attemptCount++;
+
+        if (!connectionState.isLaunching) {
             isShowingPersistentMessage = false;
             setState('connecting');
             updateStatusMessage();
             setLinkButtonState('connecting');
         }
+
+        // ✅ CRÍTICO: Destruir socket anterior si existe
+        if (socket) {
+            console.log("🧹 Limpiando socket anterior");
+            socket.removeAllListeners();
+            socket.disconnect();
+            socket = null;
+        }
+
+        // ✅ NUEVO: Timeout de seguridad (10 segundos)
+        connectionState.connectionTimeout = setTimeout(() => {
+            console.error("⏱️ Timeout de conexión alcanzado");
+            resetConnectionState();
+            
+            if (!connectionState.isLaunching) {
+                setState('dowp-closed');
+                setLaunchButtonState('closed');
+                setLinkButtonState('disconnected');
+            }
+        }, 10000);
+
         socket = io(serverUrl, {
-            transports: ['websocket'],
-            reconnectionAttempts: 5
+            transports: ['polling', 'websocket'],
+            reconnectionAttempts: 3,
+            reconnectionDelay: 2000,
+            timeout: 8000
         });
         
         socket.on('connect', () => {
-            isConnectingAttempt = false;
-            if (isLaunching) {
-                isLaunching = false;
-                if (launchTimeout) {
-                    clearTimeout(launchTimeout);
-                    launchTimeout = null;
-                }
+            console.log("✅ Conectado al servidor");
+            resetConnectionState();
+            
+            if (connectionState.isLaunching) {
+                connectionState.isLaunching = false;
                 showMessage("¡DowP iniciado correctamente!", 'success', true, 3000);
             }
             
-            // ✅ Solo registrar UNA VEZ por sesión de conexión
             if (!isSocketRegistered) {
                 socket.emit('register', { appIdentifier: thisAppIdentifier });
                 isSocketRegistered = true;
@@ -297,35 +373,34 @@ window.onload = function() {
             
             setLaunchButtonState('open');
             setLinkButtonState('connected');
-            setLaunchButtonState('open'); 
+            
             setTimeout(() => {
                 socket.emit('get_active_target');
             }, 500);
         });
         
         socket.on('connect_error', (err) => {
-            if (!isLaunching) {
+            console.error("❌ Error de conexión:", err.message);
+            resetConnectionState();
+            
+            if (!connectionState.isLaunching) {
                 setState('dowp-closed');
+                setLaunchButtonState('closed');
+                setLinkButtonState('disconnected');
             }
-            setLaunchButtonState('closed');
         });
 
-        socket.on('reconnect_failed', () => {
-            isConnectingAttempt = false; // <-- Libera el lock en el fallo FINAL
-            console.error("Socket.io: All reconnection attempts failed.");
-            setState('dowp-closed');
-            setLaunchButtonState('closed');
-        });
-        
-        socket.on('disconnect', () => {
-            isSocketRegistered = false;  // ← Resetear para la próxima reconexión
+        socket.on('disconnect', (reason) => {
+            console.log("🔌 Desconectado:", reason);
+            isSocketRegistered = false;
             toggleLinked = false;
-            isShowingPersistentMessage = false;
-            if (!isLaunching) {
+            resetConnectionState();
+            
+            if (!connectionState.isLaunching) {
                 setState('disconnected');
+                setLinkButtonState('disconnected');
+                setLaunchButtonState('closed');
             }
-            setLinkButtonState('disconnected');
-            setLaunchButtonState('closed');
         });
         
         socket.on('active_target_update', (data) => {
@@ -354,19 +429,32 @@ window.onload = function() {
                 importFileToProject(data.filePackage);
             }
         });
+
+        socket.on('import_files', (data) => {
+            if (data && data.files && data.files.length > 0) {
+                console.log(`Recibido lote de ${data.files.length} archivos para la papelera: ${data.targetBin}`);
+                importBatchToProject(data.files, data.targetBin);
+            }
+        });
     }
 
     function linkToThisApp() {
         clearUpdateNotice();
+        
+        // ✅ NUEVO: Al presionar el botón 🔗, resetear los contadores de reintento
+        connectionState.attemptCount = 0;
+        
         if (!socket || !socket.connected) {
             showMessage("Conectando y enlazando...", 'info', true);
             setLinkButtonState('connecting');
 
-            socket.once('connect', () => {
-                socket.emit('set_active_target', { targetApp: thisAppIdentifier });
-            });
+            if (socket) {
+                socket.once('connect', () => {
+                    socket.emit('set_active_target', { targetApp: thisAppIdentifier });
+                });
+            }
 
-            connectToServer();
+            connectToServer(true);
             return; 
         }
 
@@ -383,10 +471,8 @@ window.onload = function() {
     }
 
     function importFileToProject(filePackage) {
-        // 1. Extraer el nombre de la papelera (bin) de destino del paquete
         const targetBinName = filePackage.targetBin || null;
         
-        // ✅ NUEVA LÓGICA: Detectar tipo por extensión
         const AUDIO_EXTENSIONS = /\.(mp3|m4a|wav|flac|aac|ogg|opus|weba)$/i;
         const VIDEO_EXTENSIONS = /\.(mp4|mkv|webm|mov|avi|flv|wmv|m4v)$/i;
         const IMAGE_EXTENSIONS = /\.(jpg|jpeg|png|gif|bmp|tiff|tif)$/i;
@@ -405,7 +491,6 @@ window.onload = function() {
         let hasVideo = false;
         let hasImage = false;
 
-        // ✅ MEJORADO: Clasificar cada archivo por extensión
         if (filePackage.video) {
             const type = classifyFile(filePackage.video);
             console.log("filePackage.video clasificado como:", type, filePackage.video);
@@ -445,7 +530,6 @@ window.onload = function() {
         console.log("Archivos a importar:", filesToImport);
 
         if (filesToImport.length === 0) {
-            // ✅ Si no encontramos nada, verifica si hay ALGO en filePackage
             console.error("ERROR: filesToImport está vacío");
             console.error("filePackage.video:", filePackage.video);
             console.error("filePackage.thumbnail:", filePackage.thumbnail);
@@ -457,7 +541,6 @@ window.onload = function() {
 
         showMessage(`Importando ${filesToImport.length} archivo(s)...`, 'info', true);
         
-        // ✅ SEGURIDAD: Escapar correctamente
         const escapeForExtendScript = (str) => {
             return str
                 .replace(/\\/g, '\\\\')
@@ -471,7 +554,6 @@ window.onload = function() {
         const shouldAddToTimeline = addToTimelineCheckbox.checked;
         const shouldImportImages = importImagesCheckbox.checked;
 
-        // 2. Preparar el nombre de la papelera para ExtendScript (será null o "nombre")
         const escapedBinName = targetBinName ? `"${escapeForExtendScript(targetBinName)}"` : "null";
 
         if (shouldAddToTimeline) {
@@ -481,7 +563,7 @@ window.onload = function() {
                     if (timelineInfo.hasActiveTimeline) {
                         console.log("Timeline activa encontrada. Playhead:", timelineInfo.playheadTime);
                         csInterface.evalScript(
-                            `importFiles("${escapedJSON}", true, ${timelineInfo.playheadTime}, ${shouldImportImages}, ${escapedBinName})`, // <-- AÑADIDO
+                            `importFiles("${escapedJSON}", true, ${timelineInfo.playheadTime}, ${shouldImportImages}, ${escapedBinName})`,
                             (importResult) => {
                                 console.log("Resultado de importación:", importResult);
                                 handleImportResult(importResult);
@@ -499,7 +581,7 @@ window.onload = function() {
         } else {
             console.log("Importando sin timeline, archivo(s):", filesToImport);
             csInterface.evalScript(
-                `importFiles("${escapedJSON}", false, 0, ${shouldImportImages}, ${escapedBinName})`, // <-- AÑADIDO
+                `importFiles("${escapedJSON}", false, 0, ${shouldImportImages}, ${escapedBinName})`,
                 (importResult) => {
                     console.log("Resultado de importación (sin timeline):", importResult);
                     handleImportResult(importResult);
@@ -513,6 +595,79 @@ window.onload = function() {
             showMessage("¡Importado con éxito!", 'success', true, 3000);
         } else {
             showMessage(`Error al importar: ${result}`, 'error', true, 6000);
+        }
+    }
+
+    function importBatchToProject(fileList, targetBinName) {
+        const host = thisAppIdentifier;
+        const totalFiles = fileList.length;
+
+        const escapeForExtendScript = (str) => {
+            return str
+                .replace(/\\/g, '\\\\')
+                .replace(/"/g, '\\"')
+                .replace(/'/g, "\\'");
+        };
+        
+        const escapedBinName = targetBinName ? `"${escapeForExtendScript(targetBinName)}"` : "null";
+        const shouldAddToTimeline = false;
+        const shouldImportImages = false;
+
+        if (host === 'premiere') {
+            showMessage(`Importando ${totalFiles} archivo(s) a Premiere...`, 'info', true);
+            
+            const fileListJSON = JSON.stringify(fileList);
+            const escapedJSON = escapeForExtendScript(fileListJSON);
+
+            console.log("Importando lote a Premiere:", fileList);
+            
+            csInterface.evalScript(
+                `importFiles("${escapedJSON}", ${shouldAddToTimeline}, 0, ${shouldImportImages}, ${escapedBinName})`,
+                (importResult) => {
+                    console.log("Resultado de importación (lote Premiere):", importResult);
+                    handleImportResult(importResult);
+                }
+            );
+
+        } else if (host === 'aftereffects') {
+            console.log("Importando lote a After Effects (uno por uno)...");
+            let importedCount = 0;
+            let errorCount = 0;
+
+            function importNext(index) {
+                if (index >= totalFiles) {
+                    let finalMessage = `¡Importación a AE completada! (${importedCount} archivos)`;
+                    if (errorCount > 0) {
+                        finalMessage = `Importación a AE completada (${importedCount} archivos, ${errorCount} errores)`;
+                    }
+                    showMessage(finalMessage, errorCount > 0 ? 'warning' : 'success', true, 3000);
+                    return;
+                }
+
+                const fileToImport = fileList[index];
+                const fileListJSON = JSON.stringify([fileToImport]);
+                const escapedJSON = escapeForExtendScript(fileListJSON);
+
+                showMessage(`Importando ${index + 1} de ${totalFiles} a AE...`, 'info', true);
+
+                csInterface.evalScript(
+                    `importFiles("${escapedJSON}", ${shouldAddToTimeline}, 0, ${shouldImportImages}, ${escapedBinName})`,
+                    (importResult) => {
+                        if (importResult === "success") {
+                            importedCount++;
+                        } else {
+                            errorCount++;
+                            console.warn(`Error al importar ${fileToImport}: ${importResult}`);
+                        }
+                        importNext(index + 1);
+                    }
+                );
+            }
+            
+            importNext(0);
+
+        } else {
+            console.error(`Host desconocido '${host}', no se puede importar el lote.`);
         }
     }
 
@@ -545,21 +700,24 @@ window.onload = function() {
             return;
         }
 
-        isLaunching = true;
+        // ✅ NUEVO: Al lanzar DowP, resetear los contadores de reintento
+        connectionState.attemptCount = 0;
+        connectionState.isLaunching = true;
         setState('launching');
         
         const safePath = path.replace(/\\/g, '\\\\');
         csInterface.evalScript(`executeDowP("${safePath}", "${thisAppIdentifier}")`);
         
         setTimeout(() => {
-            connectToServer();
+            connectToServer(true);
         }, 2000);
         
-        launchTimeout = setTimeout(() => {
-            if (isLaunching) {
-                isLaunching = false;
+        setTimeout(() => {
+            if (connectionState.isLaunching) {
+                connectionState.isLaunching = false;
                 showMessage("Timeout al iniciar DowP. Verifica que la ruta sea correcta.", 'error', true, 8000);
                 setState('disconnected');
+                resetConnectionState();
             }
         }, 30000);
     }
@@ -567,7 +725,6 @@ window.onload = function() {
     function checkActiveTimeline() {
         const now = Date.now();
         
-        // Debounce: solo ejecutar si ha pasado suficiente tiempo desde la última verificación
         if (now - lastTimelineCheck < TIMELINE_CHECK_INTERVAL) {
             return;
         }
@@ -589,19 +746,15 @@ window.onload = function() {
             try {
                 const info = JSON.parse(result);
                 
-                // Si AHORA hay timeline activa, resetear contador de fallos
                 if (info.hasActiveTimeline) {
                     lastSuccessfulTimelineCheck = info;
                     timelineCheckFailureCount = 0;
                     updateTimelineState(true);
                 } else {
-                    // Si NO hay timeline, pero hace poco SÍ la había, ignorar cambio momentáneo
                     if (lastSuccessfulTimelineCheck && timelineCheckFailureCount < 5) {
                         timelineCheckFailureCount++;
-                        // Mantener el estado anterior, NO desactivar
                         return;
                     }
-                    // Si han sido 2+ fallos consecutivos, ENTONCES desactivar
                     timelineCheckFailureCount = 0;
                     lastSuccessfulTimelineCheck = null;
                     updateTimelineState(false);
@@ -631,7 +784,6 @@ window.onload = function() {
         setTimelineActiveState(hasActiveTimeline, { strong: addToTimelineCheckbox.checked });
     }
 
-
     function setupEventListeners() {
         window.addEventListener('focus', () => {
             checkActiveTimeline();
@@ -643,7 +795,6 @@ window.onload = function() {
             }
         });
 
-        // Nueva verificación cuando el usuario interactúa con el checkbox
         addToTimelineCheckbox.addEventListener('click', () => {
             checkActiveTimeline();
         });
@@ -723,7 +874,7 @@ window.onload = function() {
         if (updateLink) {
             updateLink.addEventListener('click', (e) => {
                 e.preventDefault();
-                console.log("Abriendo URL de descarga:", manifest.release_notes_url || manifest.download_url);
+                console.log("Abriendo URL de descarga:", updateManifestData.release_notes_url || updateManifestData.download_url);
                 clearUpdateNotice(); 
                 const urlToOpen = updateManifestData.release_notes_url || updateManifestData.download_url || updateManifestData.url;
                 if (urlToOpen) {
@@ -742,6 +893,7 @@ window.onload = function() {
             }, 20000);
         }
     }
+
     async function checkForUpdates() {
         console.log("Iniciando verificación de actualizaciones...");
         console.log(`Versión actual: ${CURRENT_EXTENSION_VERSION}`);
@@ -820,11 +972,9 @@ window.onload = function() {
 
             let dowpPath = await storage.getDowpPath();
             
-            // Si no hay ruta guardada, intentar detectar automáticamente
             if (!dowpPath) {
                 csInterface.evalScript('findDowPExecutable()', async (detectedPath) => {
                     if (detectedPath && detectedPath !== "not_found" && !detectedPath.startsWith("error")) {
-                        // DowP encontrado automáticamente
                         dowpPath = detectedPath;
                         const saved = await storage.setDowpPath(dowpPath);
                         if (saved) {
@@ -834,7 +984,6 @@ window.onload = function() {
                             connectToServer();
                         }
                     } else {
-                        // DowP no encontrado - pedir al usuario
                         setState('unconfigured');
                         setLinkButtonState('disconnected');
                         btnLaunch.classList.add('is-disabled');
@@ -849,32 +998,30 @@ window.onload = function() {
 
             setTimelineActiveState(Boolean(lastTimelineState), { strong: Boolean(addToTimelineCheckbox.checked) });
 
-            // Intervalo principal: conexión y verificaciones periódicas
+            // ✅ CRÍTICO: Intervalo de mantenimiento MÁS CONSERVADOR
             setInterval(() => {
-                // Gestión de conexión
+                // ✅ BLOQUEADO: No reconectar automáticamente si ya fallamos 3 veces
                 if (!socket || !socket.connected) {
-                    
-                    // V MODIFICA ESTA LÍNEA V
-                    if (!isLaunching && !isConnectingAttempt) {
-                    // ^ AÑADE "!isConnectingAttempt" ^
-                        connectToServer();
+                    // NO hacer nada automáticamente, solo actualizar UI
+                    if (!connectionState.isLaunching) {
+                        setState('dowp-closed');
+                        setLinkButtonState('disconnected');
+                        setLaunchButtonState('closed');
                     }
                 } else {
                     socket.emit('get_active_target');
-
-                    if (isLaunching && !launchTimeout) {
-                        isLaunching = false;
-                        setState('linked-elsewhere');
+                    
+                    if (connectionState.attemptCount > 0) {
+                        connectionState.attemptCount = 0;
                     }
                 }
 
-                // Verificación de timeline con debounce inteligente
                 if (!checkingTimeline) {
                     checkActiveTimeline();
                 }
-            }, 800);
+            }, 1000);
             
-            setTimeout(checkForUpdates, 3000);
+            setTimeout(checkForUpdates, 1000);
         });
     }
 

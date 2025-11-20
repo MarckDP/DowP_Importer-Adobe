@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<ExtensionManifest Version="7.0" ExtensionBundleId="com.dowp.importer" ExtensionBundleVersion="1.1.8" ExtensionBundleName="DowP Importer">
+<ExtensionManifest Version="7.0" ExtensionBundleId="com.dowp.importer" ExtensionBundleVersion="1.1.9" ExtensionBundleName="DowP Importer">
     <ExtensionList>
-        <Extension Id="com.dowp.importer" Version="1.1.8" />
+        <Extension Id="com.dowp.importer" Version="1.1.9" />
     </ExtensionList>
     <ExecutionEnvironment>
         <HostList>

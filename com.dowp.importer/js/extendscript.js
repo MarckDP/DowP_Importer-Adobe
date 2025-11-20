@@ -50,14 +50,11 @@
                     str = str.replace(/^\s+|\s+$/g, '');
                     if (str === "") return null;
                     
-                    // ✅ VALIDACIÓN MÁS ESTRICTA antes de ejecutar código
                     if (!/^[\[\{"]/.test(str) && !/^-?\d/.test(str) && !/^(true|false|null)$/.test(str)) {
                         console.error("JSON no válido, rechazando para seguridad");
                         return null;
                     }
                     
-                    // ✅ Usar Function constructor en lugar de eval (más seguro)
-                    // Esto crea una función que retorna el valor, sin acceso al scope global
                     try {
                         return new Function("return (" + str + ")")();
                     } catch (e) {
@@ -97,9 +94,15 @@ function selectDowPExecutable() {
 }
 
 function executeDowP(path, appIdentifier) {
+    // ✅ NUEVO: Log de debug
+    $.writeln("DEBUG: executeDowP llamado");
+    $.writeln("  - Ruta: " + path);
+    $.writeln("  - App: " + appIdentifier);
+    
     try {
         var exeFile = new File(path);
         if (!exeFile.exists) {
+            $.writeln("ERROR: El archivo DowP.exe no existe en: " + path);
             return "Error: El archivo DowP.exe no se encontró en la ruta especificada: " + path;
         }
 
@@ -112,15 +115,20 @@ function executeDowP(path, appIdentifier) {
             scriptFile.encoding = "UTF-8";
             scriptFile.write(scriptContent);
             scriptFile.close();
+            
+            $.writeln("DEBUG: Ejecutando script batch: " + scriptFile.fsName);
             scriptFile.execute();
 
         } else {
+            $.writeln("DEBUG: Ejecutando directamente (no Windows)");
             exeFile.execute();
         }
 
+        $.writeln("DEBUG: executeDowP completado exitosamente");
         return "success";
 
     } catch (e) {
+        $.writeln("ERROR en executeDowP: " + e.toString());
         return "Error al intentar ejecutar DowP: " + e.toString();
     }
 }
@@ -192,7 +200,7 @@ function isFileRecentlyModified(filePath, thresholdMinutes) {
     }
 }
 
-function importFiles(fileListJSON, addToTimeline, playheadTime, importImagesToTimeline, targetBinName) { // <-- AÑADIDO
+function importFiles(fileListJSON, addToTimeline, playheadTime, importImagesToTimeline, targetBinName) {
     try {
         var filePaths = null;
         
@@ -212,9 +220,9 @@ function importFiles(fileListJSON, addToTimeline, playheadTime, importImagesToTi
 
         var host = getHostAppName();
         if (host === "Adobe After Effects") {
-            return importForAfterEffects(filePaths, addToTimeline, playheadTime, importImagesToTimeline, targetBinName); // <-- AÑADIDO
+            return importForAfterEffects(filePaths, addToTimeline, playheadTime, importImagesToTimeline, targetBinName);
         } else if (host === "Adobe Premiere Pro") {
-            return importForPremiere(filePaths, addToTimeline, playheadTime, importImagesToTimeline, targetBinName); // <-- AÑADIDO
+            return importForPremiere(filePaths, addToTimeline, playheadTime, importImagesToTimeline, targetBinName);
         } else {
             return "Error: Aplicación no soportada.";
         }
@@ -235,33 +243,30 @@ function getTrackIndex(trackCollection, track) {
     return -1;
 }
 
-function importForPremiere(filePaths, addToTimeline, playheadTime, importImagesToTimeline, targetBinName) { // <-- AÑADIDO
+function importForPremiere(filePaths, addToTimeline, playheadTime, importImagesToTimeline, targetBinName) {
     try {
         if (!app.project) return "Error: No hay un proyecto abierto en Premiere Pro.";
 
         var project = app.project;
-        var mainBinName = "DowP Imports"; // <-- Renombrado
-        var mainBin = null; // <-- Renombrado
+        var mainBinName = "DowP Imports";
+        var mainBin = null;
 
         for (var i = 0; i < project.rootItem.children.numItems; i++) {
             var item = project.rootItem.children[i];
             if (item.name === mainBinName && item.type === ProjectItemType.BIN) {
-                mainBin = item; // <-- Renombrado
+                mainBin = item;
                 break;
             }
         }
         
-        if (mainBin === null) { // <-- Renombrado
-            mainBin = project.rootItem.createBin(mainBinName); // <-- Renombrado
+        if (mainBin === null) {
+            mainBin = project.rootItem.createBin(mainBinName);
         }
 
-        // --- INICIO DE NUEVO CÓDIGO ---
-        var targetBin = mainBin; // Por defecto, importamos a la carpeta principal
+        var targetBin = mainBin;
         
-        // Si nos pasaron un nombre de subcarpeta...
         if (targetBinName) {
             var subBin = null;
-            // Buscar si ya existe la subcarpeta
             for (var j = 0; j < mainBin.children.numItems; j++) {
                 var subItem = mainBin.children[j];
                 if (subItem.name === targetBinName && subItem.type === ProjectItemType.BIN) {
@@ -269,17 +274,53 @@ function importForPremiere(filePaths, addToTimeline, playheadTime, importImagesT
                     break;
                 }
             }
-            // Si no existe, crearla
             if (subBin === null) {
                 subBin = mainBin.createBin(targetBinName);
             }
-            targetBin = subBin; // Establecer la subcarpeta como el destino final
+            targetBin = subBin;
+        }
+        
+        var importSucceeded = false;
+        var maxRetries = 3;
+        var retryDelay = 750; // 0.75 segundos de espera entre reintentos
+
+        // Guardar los UIDs *antes* de cualquier intento
+        var uidsBeforeImport = getItemUIDs(targetBin);
+
+        for (var attempt = 1; attempt <= maxRetries; attempt++) {
+            try {
+                // Pausa preventiva. Aumenta en cada intento.
+                // Intento 1: 500ms (para sumar al cooldown de Python)
+                // Intento 2: 750ms
+                // Intento 3: 1500ms
+                var currentDelay = (attempt === 1) ? 500 : (retryDelay * (attempt - 1));
+                $.sleep(currentDelay); 
+                
+                $.writeln("[Premiere] Intento de importación en lote " + attempt + "/" + maxRetries + " (Pausa: " + currentDelay + "ms)");
+
+                // El comando de importación en lote (el que queremos conservar)
+                project.importFiles(filePaths, true, targetBin, false);
+                
+                // Si no lanzó una excepción, ¡éxito!
+                importSucceeded = true;
+                $.writeln("[Premiere] ¡Importación en lote exitosa en el intento " + attempt + "!");
+                break; // Salir del bucle de reintento
+
+            } catch (e) {
+                $.writeln("[Premiere ERROR] Intento " + attempt + " falló: " + e.toString());
+                if (attempt === maxRetries) {
+                    // Si fallan todos los reintentos, lanzamos el error
+                    throw new Error("Fallaron todos los reintentos de importación. Error: " + e.toString());
+                }
+                // Si no es el último intento, el bucle continuará y reintentará.
+            }
         }
 
-        var uidsBeforeImport = getItemUIDs(targetBin);
-        project.importFiles(filePaths, true, targetBin, false);
-        $.sleep(500);
-
+        if (!importSucceeded) {
+            // Esto no debería pasar si la lógica de 'throw' es correcta, pero es un buen seguro.
+            return "Error: La importación en lote falló después de " + maxRetries + " intentos.";
+        }
+        
         if (addToTimeline) {
             var sequence = app.project.activeSequence;
             if (!sequence) return "Error: No hay una secuencia activa para añadir el clip.";
@@ -293,16 +334,13 @@ function importForPremiere(filePaths, addToTimeline, playheadTime, importImagesT
                 if (!uidsBeforeImport.hasOwnProperty(currentItem.nodeId)) {
                     var avDetection = detectAVviaXMP(currentItem);
                     
-                    // ✅ MEJORADO: Detectar tipo por extensión también
                     var mediaPath = currentItem.getMediaPath().toLowerCase();
                     var isAudioFile = /\.(mp3|m4a|wav|flac|aac|ogg|opus|weba)$/i.test(mediaPath);
                     var isImage = /\.(jpg|jpeg|png|gif|bmp|tiff|tif)$/i.test(mediaPath);
 
                     if (avDetection.video && avDetection.audio) {
-                        // Video con audio
                         handleMixedClipInsert(sequence, playheadTimeObject, currentItem);
                     } else if (avDetection.video && !avDetection.audio) {
-                        // Solo video
                         if (!importImagesToTimeline && isImage) {
                             continue;
                         }
@@ -311,23 +349,17 @@ function importForPremiere(filePaths, addToTimeline, playheadTime, importImagesT
                             vTrack.insertClip(currentItem, playheadTimeObject);
                         }
                     } else if (!avDetection.video && avDetection.audio) {
-                        // ✅ Solo audio (detectado por XMP)
                         var aTrack = findAvailableAudioTrack(sequence, playheadTimeObject, currentItem);
                         if (aTrack) {
                             aTrack.insertClip(currentItem, playheadTimeObject);
                         }
                     } else if (!avDetection.video && !avDetection.audio) {
-                        // ✅ NUEVO: XMP no detectó nada, intentar por extensión y contenido real
-                        // Esto cubre casos como .mp4 con solo audio
                         if (isAudioFile) {
-                            // Claramente es audio por extensión
                             var aTrack = findAvailableAudioTrack(sequence, playheadTimeObject, currentItem);
                             if (aTrack) {
                                 aTrack.insertClip(currentItem, playheadTimeObject);
                             }
                         } else if (!isImage) {
-                            // No es imagen, asumir que es video o contenedor desconocido
-                            // Intentar primero video, si falla intentar audio
                             var vTrack = findAvailableVideoTrack(sequence, playheadTimeObject, currentItem);
                             if (vTrack) {
                                 vTrack.insertClip(currentItem, playheadTimeObject);
@@ -347,7 +379,6 @@ function importForPremiere(filePaths, addToTimeline, playheadTime, importImagesT
         return "Error en importForPremiere: " + error.toString();
     }
 }
-
 
 function findAvailableVideoTrack(sequence, playheadTimeObject, mediaItem) {
     try {
@@ -540,33 +571,30 @@ function findAvailableAudioTrack(sequence, playheadTimeObject, mediaItem) {
     return null;
 }
 
-function importForAfterEffects(filePaths, addToTimeline, playheadTime, importImagesToTimeline, targetBinName) { // <-- AÑADIDO
+function importForAfterEffects(filePaths, addToTimeline, playheadTime, importImagesToTimeline, targetBinName) {
     try {
         if (!app.project) return "Error: No hay un proyecto abierto en After Effects.";
         
         app.beginUndoGroup("Importar desde DowP");
         var project = app.project;
-        var mainBinName = "DowP Imports"; // <-- Renombrado
-        var mainBin = null; // <-- Renombrado
+        var mainBinName = "DowP Imports";
+        var mainBin = null;
 
         for (var i = 1; i <= project.numItems; i++) {
             var item = project.item(i);
             if (item.name === mainBinName && item instanceof FolderItem) {
-                mainBin = item; // <-- Renombrado
+                mainBin = item;
                 break;
             }
         }
-        if (mainBin === null) { // <-- Renombrado
-            mainBin = project.items.addFolder(mainBinName); // <-- Renombrado
+        if (mainBin === null) {
+            mainBin = project.items.addFolder(mainBinName);
         }
         
-        // --- INICIO DE NUEVO CÓDIGO ---
-        var targetBin = mainBin; // Por defecto, importamos a la carpeta principal
+        var targetBin = mainBin;
         
-        // Si nos pasaron un nombre de subcarpeta...
         if (targetBinName) {
             var subBin = null;
-            // Buscar si ya existe la subcarpeta
             for (var j = 1; j <= mainBin.numItems; j++) {
                 var subItem = mainBin.item(j);
                 if (subItem.name === targetBinName && subItem instanceof FolderItem) {
@@ -574,12 +602,11 @@ function importForAfterEffects(filePaths, addToTimeline, playheadTime, importIma
                     break;
                 }
             }
-            // Si no existe, crearla
             if (subBin === null) {
                 subBin = project.items.addFolder(targetBinName);
-                subBin.parentFolder = mainBin; // Moverla dentro de la carpeta principal
+                subBin.parentFolder = mainBin;
             }
-            targetBin = subBin; // Establecer la subcarpeta como el destino final
+            targetBin = subBin;
         }
         
         var mediaItems = [];
@@ -588,40 +615,68 @@ function importForAfterEffects(filePaths, addToTimeline, playheadTime, importIma
             var currentPath = filePaths[j];
             var lowerPath = currentPath.toLowerCase();
             
-            // Saltar subtítulos
             if (/\.(srt|vtt|ass|ssa|sub)$/i.test(lowerPath)) continue;
+
+            // --- INICIO DE LA MODIFICACIÓN ---
             
-            try {
-                clearCacheForExistingItems(currentPath, targetBin);
-                
-                if (isFileRecentlyModified(currentPath, 2)) {
-                    $.sleep(200); 
-                }
-                
-                var importOptions = new ImportOptions(new File(currentPath));
-                
-                if (importOptions.canImportAs && importOptions.canImportAs(ImportAsType.FOOTAGE)) {
-                    importOptions.importAs = ImportAsType.FOOTAGE;
-                }
-                
-                importOptions.sequence = false;
-                
-                var importedItem = project.importFile(importOptions);
-                importedItem.parentFolder = targetBin;
-                
-                if (importedItem.file && importedItem.file.exists) {
-                    try {
-                        importedItem.replace(importedItem.file);
-                    } catch (e) {
+            var importedItem = null;
+            var maxRetries = 3;
+            var retryDelay = 500; // Empezar con 500ms (0.5s) de retraso
+
+            for (var attempt = 1; attempt <= maxRetries; attempt++) {
+                try {
+                    // Limpiar caché en CADA intento
+                    clearCacheForExistingItems(currentPath, targetBin);
+
+                    // Pausa preventiva. Aumenta en cada intento.
+                    // Intento 1: 250ms
+                    // Intento 2: 500ms
+                    // Intento 3: 1000ms
+                    $.sleep( (attempt === 1) ? 250 : (retryDelay * (attempt - 1)) );
+
+                    var importOptions = new ImportOptions(new File(currentPath));
+                    
+                    if (importOptions.canImportAs && importOptions.canImportAs(ImportAsType.FOOTAGE)) {
+                        importOptions.importAs = ImportAsType.FOOTAGE;
+                    }
+                    
+                    importOptions.sequence = false;
+                    
+                    importedItem = project.importFile(importOptions); // <--- Intento de importación
+                    
+                    if (importedItem) {
+                        // ¡Éxito!
+                        importedItem.parentFolder = targetBin;
+                         
+                        // (Lógica de refresco de caché que ya tenías)
+                        if (importedItem.file && importedItem.file.exists) {
+                            try { importedItem.replace(importedItem.file); } catch (e_rep) {}
+                        }
+                         
+                        $.writeln("Importación exitosa en intento " + attempt + " para: " + currentPath);
+                        break; // Salir del bucle de reintento
+                    }
+
+                } catch (e) {
+                    // Imprime el error real en la consola de ExtendScript
+                    $.writeln("[ERROR] Intento " + attempt + " falló para " + currentPath + ": " + e.toString());
+
+                    if (attempt === maxRetries) {
+                        // Si fallan todos los reintentos, registrar el error
+                        $.writeln("ERROR: Fallaron todos los reintentos de importación para " + currentPath);
+                        // 'importedItem' seguirá siendo null
                     }
                 }
+            } // Fin del bucle for (reintentos)
+
+
+            // (Esta lógica ahora está FUERA del bloque try/catch de importación)
+            if (importedItem) {
                 
-                // ✅ MEJORADO: Detectar tipo por extensión
                 var isImage = /\.(jpg|jpeg|png|gif|bmp|tiff|tif)$/i.test(lowerPath);
                 var isAudio = /\.(mp3|m4a|wav|flac|aac|ogg|opus|weba)$/i.test(lowerPath);
                 var isVideo = /\.(mp4|mkv|webm|mov|avi|flv|wmv|m4v)$/i.test(lowerPath);
 
-                // ✅ DEBUG: Log de qué se importó
                 $.writeln("DEBUG: Importado - " + currentPath);
                 $.writeln("  - hasVideo: " + importedItem.hasVideo);
                 $.writeln("  - hasAudio: " + importedItem.hasAudio);
@@ -629,17 +684,13 @@ function importForAfterEffects(filePaths, addToTimeline, playheadTime, importIma
                 $.writeln("  - isAudio: " + isAudio);
                 $.writeln("  - isVideo: " + isVideo);
 
-                // ✅ 1. Comprobar si es un archivo multimedia válido (video, audio O imagen)
                 var isImportable = importedItem.hasVideo || importedItem.hasAudio || isAudio || isVideo || isImage;
 
                 if (importedItem && isImportable) {
                     
-                    // ✅ 2. Comprobar si debe saltarse la ADICIÓN A TIMELINE
-                    // (El archivo ya se importó al proyecto líneas arriba)
-                    // Si es una imagen Y el usuario NO quiere imágenes en la timeline -> saltar
                     if (isImage && !importImagesToTimeline) {
                         $.writeln("  - SALTADO (Timeline): Imagen y 'importImagesToTimeline' está desactivado.");
-                        continue; // No añadir a mediaItems, ir al siguiente archivo
+                        continue;
                     }
                     
                     $.writeln("  - AÑADIDO a mediaItems (para timeline)");
@@ -648,24 +699,10 @@ function importForAfterEffects(filePaths, addToTimeline, playheadTime, importIma
                 } else {
                     $.writeln("  - RECHAZADO: No tiene audio/video y no es extensión reconocida");
                 }
-            } catch (e) {
-                try {
-                    var file = new File(currentPath);
-                    if (file.exists) {
-                        var altImportOptions = new ImportOptions(file);
-                        altImportOptions.forceAlphabetical = false;
-                        var altImportedItem = project.importFile(altImportOptions);
-                        altImportedItem.parentFolder = targetBin;
-                        
-                        if ((altImportedItem.hasVideo || altImportedItem.hasAudio)) {
-                            mediaItems.push(altImportedItem);
-                        }
-                    }
-                } catch (e2) {
-                    continue;
-                }
+            
             }
-        }
+
+        } 
 
         if (addToTimeline && mediaItems.length > 0) {
             var comp = app.project.activeItem;
@@ -735,7 +772,6 @@ function detectAVviaXMP(projectItem) {
         var xmp = projectItem.getProjectMetadata();
         
         if (xmp) {
-            // ✅ BÚSQUEDA MÁS FLEXIBLE: Busca cualquier variación de "VideoInfo"
             if (xmp.indexOf("VideoInfo") !== -1 || 
                 xmp.indexOf("vcodec") !== -1 ||
                 xmp.indexOf("width") !== -1 ||
@@ -743,7 +779,6 @@ function detectAVviaXMP(projectItem) {
                 hasVideo = true;
             }
             
-            // ✅ BÚSQUEDA MÁS FLEXIBLE: Busca cualquier variación de "AudioInfo"
             if (xmp.indexOf("AudioInfo") !== -1 || 
                 xmp.indexOf("acodec") !== -1 ||
                 xmp.indexOf("channels") !== -1 ||
@@ -751,7 +786,6 @@ function detectAVviaXMP(projectItem) {
                 hasAudio = true;
             }
             
-            // ✅ DEBUG: Mostrar qué encontró
             $.writeln("DEBUG detectAVviaXMP:");
             $.writeln("  - hasVideo: " + hasVideo);
             $.writeln("  - hasAudio: " + hasAudio);
@@ -768,8 +802,6 @@ function detectAVviaXMP(projectItem) {
 
     return { video: hasVideo, audio: hasAudio };
 }
-
-
 
 function getConfigFilePath() {
     try {
@@ -849,8 +881,7 @@ function loadConfig(key) {
 
 function findDowPExecutable() {
     try {
-        // Ruta estándar: AppData\Local\DowP\DowP.exe
-        var userFolder = Folder.userData; // C:\Users\[username]\AppData\Roaming
+        var userFolder = Folder.userData;
         var localAppData = new Folder(userFolder.parent.fsName + "\\Local\\DowP");
         var dowpExe = new File(localAppData.fsName + "\\DowP.exe");
         
@@ -861,25 +892,5 @@ function findDowPExecutable() {
         return "not_found";
     } catch (e) {
         return "error: " + e.toString();
-    }
-}
-
-function importFilesById(fileListId, addToTimeline, playheadTime, importImagesToTimeline) {
-    try {
-        // ✅ Recuperar la lista de archivos desde window (que pasó main.js)
-        // Pero como estamos en ExtendScript, necesitamos acceder via $ (acceso al DOM/host)
-        
-        // En realidad, para ExtendScript llamado desde CEP, necesitamos pasar los datos diferente
-        // Alternativa: Usar una variable global temporal
-        
-        if (typeof gDownloadFileList === "undefined" || !gDownloadFileList) {
-            return "Error: No se encontró lista de archivos";
-        }
-        
-        var filePaths = gDownloadFileList;
-        return importFiles(JSON.stringify(filePaths), addToTimeline, playheadTime, importImagesToTimeline);
-        
-    } catch (error) {
-        return "Error en importFilesById: " + error.toString();
     }
 }
