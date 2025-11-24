@@ -262,3 +262,34 @@ body {
     cursor: not-allowed;
     pointer-events: none;
 }
+
+/* --- Estilo Botón de Envío --- */
+#btn-send-to-dowp {
+    background-color: #6F42C1; /* Morado (Color de proceso) */
+    color: white;
+    transition: all 0.2s ease;
+    opacity: 1;
+    pointer-events: auto;
+}
+
+#btn-send-to-dowp:hover {
+    background-color: #845ef7; /* Morado más claro */
+    transform: scale(1.05);
+    box-shadow: 0 0 8px rgba(111, 66, 193, 0.5);
+}
+
+#btn-send-to-dowp:active {
+    transform: scale(0.95);
+    background-color: #59369a;
+}
+
+/* Clase para deshabilitar visualmente (cuando no hay conexión) */
+#btn-send-to-dowp.is-disabled {
+    background-color: #3a3a3f; /* Gris oscuro */
+    color: #777;
+    cursor: not-allowed;
+    opacity: 0.5;
+    pointer-events: none;
+    box-shadow: none;
+    transform: none;
+}

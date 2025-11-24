@@ -1,6 +1,6 @@
 window.onload = function() {
     const csInterface = new CSInterface();
-    const CURRENT_EXTENSION_VERSION = "1.1.9";
+    const CURRENT_EXTENSION_VERSION = "1.2.0";
     const UPDATE_MANIFEST_URL = "https://raw.githubusercontent.com/MarckDP/DowP_Importer-Adobe/refs/heads/main/update.json";
     const serverUrl = "http://127.0.0.1:7788";
     let thisAppName = "Desconocido";
@@ -45,6 +45,8 @@ window.onload = function() {
     const btnLink = document.getElementById('btn-check');
     const btnLaunch = document.getElementById('btn-launch');
     const btnSettings = document.getElementById('btn-settings');
+    const btnSendToDowp = document.getElementById('btn-send-to-dowp');
+    if(btnSendToDowp) btnSendToDowp.classList.add('is-disabled');
     const addToTimelineCheckbox = document.getElementById('add-to-timeline-checkbox');
     const addToTimelineContainer = document.getElementById('add-to-timeline-container');
     const importImagesCheckbox = document.getElementById('import-images-checkbox');
@@ -232,8 +234,22 @@ window.onload = function() {
                 btn.classList.add('state-disconnected');
                 btn.title = '';
                 btn.innerHTML = '<span class="icon">❓</span>';
+            }
+
+        const btnSend = document.getElementById('btn-send-to-dowp');
+        if (btnSend) {
+            if (state === 'connected' || state === 'linked-me') {
+                // Si estamos conectados, habilitar botón morado
+                btnSend.classList.remove('is-disabled');
+                btnSend.title = "Enviar selección a DowP";
+            } else {
+                // Si no, deshabilitar (gris)
+                btnSend.classList.add('is-disabled');
+                btnSend.title = "Conecta DowP para enviar archivos";
+            }
         }
     }
+        
 
     function setLaunchButtonState(state) {
         const btn = document.getElementById('btn-launch');
@@ -959,6 +975,41 @@ window.onload = function() {
         compareVersions: compareVersions
     };
 
+    function sendSelectionToDowP() {
+        if (!socket || !socket.connected) {
+            showMessage("Error: No hay conexión con DowP.", 'error', true, 3000);
+            return;
+        }
+
+        showMessage("Buscando archivos seleccionados...", 'info');
+
+        csInterface.evalScript('getSelectedFilePathsFromAdobe()', (result) => {
+            console.log("Resultado raw de ExtendScript:", result); // DEBUG
+            
+            try {
+                const files = JSON.parse(result);
+                
+                console.log("Archivos parseados:", files); // DEBUG
+                console.log("Cantidad:", files.length); // DEBUG
+                
+                if (!files || files.length === 0) {
+                    showMessage("⚠️ Nada seleccionado en Timeline o Proyecto.", 'warning', true, 3000);
+                    return;
+                }
+
+                console.log("Enviando archivos a DowP:", files);
+                socket.emit('adobe_push_files', { files: files });
+                
+                showMessage(`🚀 Enviados ${files.length} archivo(s).`, 'success', true, 4000);
+
+            } catch (e) {
+                console.error("Error al parsear resultado:", e);
+                console.error("Resultado que causó el error:", result);
+                showMessage("Error al leer selección: " + e.message, 'error', true, 4000);
+            }
+        });
+    }
+
     async function initializeApp() {
         isUpdateNoticeActive = false;
         csInterface.evalScript('getHostAppName()', async (result) => {
@@ -1028,5 +1079,15 @@ window.onload = function() {
     btnLink.onclick = linkToThisApp;
     btnLaunch.onclick = launchDowP;
     btnSettings.onclick = setDowPPath;
+    btnSendToDowp.onclick = sendSelectionToDowP;
     initializeApp();
+};
+
+// Agregar después de initializeApp() al final del archivo, TEMPORALMENTE
+window.debugSelection = function() {
+    csInterface.evalScript('debugProjectSelection()', (result) => {
+        console.log("=== DIAGNÓSTICO COMPLETO ===");
+        console.log(result);
+        alert("Revisa la consola del navegador (F12)");
+    });
 };

@@ -894,3 +894,335 @@ function findDowPExecutable() {
         return "error: " + e.toString();
     }
 }
+
+function getSelectedFilePathsFromAdobe() {
+    var filePaths = [];
+    var foundPathsObj = {}; 
+    var debugMessages = [];
+    
+    // ✅ NUEVO: Crear archivo de log
+    var logFile = new File(Folder.temp.fsName + "/dowp_debug.txt");
+    
+    function logDebug(msg) {
+        debugMessages.push(msg);
+        $.writeln(msg);
+        // Escribir también a archivo
+        try {
+            logFile.open("a");
+            logFile.writeln(msg);
+            logFile.close();
+        } catch(e) {}
+    }
+    
+    // Limpiar log anterior
+    try {
+        logFile.open("w");
+        logFile.writeln("=== NUEVO DEBUG SESSION ===");
+        logFile.writeln("Timestamp: " + new Date().toString());
+        logFile.close();
+    } catch(e) {}
+
+    function addPath(path) {
+        if (path && path.length > 0) {
+            var f = new File(path);
+            if (f.exists) {
+                if (!foundPathsObj[f.fsName]) {
+                    filePaths.push(f.fsName);
+                    foundPathsObj[f.fsName] = true;
+                    logDebug("✓ Agregado: " + f.fsName);
+                }
+            } else {
+                logDebug("✗ No existe: " + path);
+            }
+        }
+    }
+
+    try {
+        var host = getHostAppName();
+        logDebug("Host detectado: " + host);
+        
+        if (host === "Adobe Premiere Pro") {
+            logDebug("=== PREMIERE PRO ===");
+            
+            // 1. Buscar en la Línea de Tiempo Activa
+            if (app.project && app.project.activeSequence) {
+                try {
+                    var trackItems = app.project.activeSequence.getSelection();
+                    logDebug("Clips en timeline: " + trackItems.length);
+                    
+                    for (var k = 0; k < trackItems.length; k++) {
+                        try {
+                            var clip = trackItems[k];
+                            if (clip.projectItem && clip.projectItem.getMediaPath) {
+                                var path = clip.projectItem.getMediaPath();
+                                logDebug("Timeline clip path: " + path);
+                                addPath(path);
+                            }
+                        } catch (clipError) {
+                            logDebug("Error en clip " + k + ": " + clipError.toString());
+                        }
+                    }
+                } catch (timelineError) {
+                    logDebug("Error timeline: " + timelineError.toString());
+                }
+            } else {
+                logDebug("No hay secuencia activa");
+            }
+
+            // 2. Buscar en el Panel de Proyecto (Bin)
+            logDebug("--- Buscando en Panel de Proyecto ---");
+            if (app.project) {
+                try {
+                    var selection = app.project.getSelection();
+                    logDebug("Items en proyecto: " + selection.length);
+                    
+                    if (selection.length === 0) {
+                        logDebug("⚠️ La selección está vacía - asegúrate de seleccionar clips en el proyecto");
+                    }
+                    
+                    for (var i = 0; i < selection.length; i++) {
+                        try {
+                            var item = selection[i];
+                            if (!item) {
+                                logDebug("  Item " + i + " es null/undefined");
+                                continue;
+                            }
+                            
+                            // Debug: nombre del item
+                            logDebug("  Item " + i + ": " + (item.name || "sin nombre"));
+                            
+                            // Debug: tipo de item
+                            var itemType = "unknown";
+                            try {
+                                if (item.type === ProjectItemType.BIN) {
+                                    itemType = "BIN";
+                                    logDebug("    Tipo: BIN (carpeta) - SALTADO");
+                                    continue;
+                                } else if (item.type === ProjectItemType.CLIP) {
+                                    itemType = "CLIP";
+                                } else if (item.type === ProjectItemType.FILE) {
+                                    itemType = "FILE";
+                                } else {
+                                    itemType = "type=" + item.type;
+                                }
+                                logDebug("    Tipo: " + itemType);
+                            } catch (e) {
+                                logDebug("    Tipo: ERROR - " + e.toString());
+                            }
+                            
+                            // Intentar obtener la ruta
+                            var path = "";
+                            
+                            // Método 1: getMediaPath()
+                            try {
+                                if (typeof item.getMediaPath === "function") {
+                                    path = item.getMediaPath();
+                                    logDebug("    getMediaPath() = '" + path + "'");
+                                } else {
+                                    logDebug("    getMediaPath NO es función");
+                                }
+                            } catch (e) {
+                                logDebug("    getMediaPath() ERROR: " + e.toString());
+                            }
+                            
+                            // Método 2: mediaPath propiedad
+                            if (!path || path === "") {
+                                try {
+                                    if (item.mediaPath) {
+                                        path = item.mediaPath;
+                                        logDebug("    mediaPath = '" + path + "'");
+                                    } else {
+                                        logDebug("    mediaPath está vacío o undefined");
+                                    }
+                                } catch (e) {
+                                    logDebug("    mediaPath ERROR: " + e.toString());
+                                }
+                            }
+                            
+                            // Método 3: filePath
+                            if (!path || path === "") {
+                                try {
+                                    if (item.filePath) {
+                                        path = item.filePath;
+                                        logDebug("    filePath = '" + path + "'");
+                                    } else {
+                                        logDebug("    filePath está vacío o undefined");
+                                    }
+                                } catch (e) {
+                                    logDebug("    filePath ERROR: " + e.toString());
+                                }
+                            }
+                            
+                            // Intentar agregar
+                            if (path && path !== "" && path !== "undefined") {
+                                logDebug("    ➜ Intentando agregar: " + path);
+                                addPath(path);
+                            } else {
+                                logDebug("    ✗ No se pudo obtener ruta válida");
+                            }
+                            
+                        } catch (itemError) {
+                            logDebug("  ERROR procesando item " + i + ": " + itemError.toString());
+                        }
+                    }
+                } catch (projectError) {
+                    logDebug("ERROR obteniendo selección: " + projectError.toString());
+                }
+            } else {
+                logDebug("✗ app.project no existe");
+            }
+
+        } else if (host === "Adobe After Effects") {
+            debugMessages.push("=== AFTER EFFECTS ===");
+            
+            // 1. Buscar en la Composición Activa (Capas seleccionadas)
+            if (app.project && app.project.activeItem && app.project.activeItem instanceof CompItem) {
+                try {
+                    var selectedLayers = app.project.activeItem.selectedLayers;
+                    debugMessages.push("Capas seleccionadas: " + selectedLayers.length);
+                    
+                    for (var m = 0; m < selectedLayers.length; m++) {
+                        try {
+                            var layer = selectedLayers[m];
+                            if (layer.source && layer.source.file) {
+                                debugMessages.push("Layer path: " + layer.source.file.fsName);
+                                addPath(layer.source.file.fsName);
+                            }
+                        } catch (layerError) {
+                            debugMessages.push("Error en layer " + m + ": " + layerError.toString());
+                        }
+                    }
+                } catch (compError) {
+                    debugMessages.push("Error comp: " + compError.toString());
+                }
+            } else {
+                debugMessages.push("No hay comp activa");
+            }
+
+            // 2. Buscar en el Panel de Proyecto
+            if (app.project && app.project.selection) {
+                try {
+                    var selection = app.project.selection;
+                    debugMessages.push("Items seleccionados en proyecto: " + selection.length);
+                    
+                    for (var i = 0; i < selection.length; i++) {
+                        try {
+                            var item = selection[i];
+                            if (item instanceof FootageItem && item.file) {
+                                debugMessages.push("Proyecto item path: " + item.file.fsName);
+                                addPath(item.file.fsName);
+                            } else if (item instanceof FolderItem) {
+                                debugMessages.push("  (saltado: es un folder)");
+                            }
+                        } catch (itemError) {
+                            debugMessages.push("Error en item " + i + ": " + itemError.toString());
+                        }
+                    }
+                } catch (projectError) {
+                    debugMessages.push("Error proyecto: " + projectError.toString());
+                }
+            }
+        }
+        
+        logDebug("=== RESULTADO FINAL ===");
+        logDebug("Total archivos encontrados: " + filePaths.length);
+        
+        // Escribir resumen final
+        try {
+            logFile.open("a");
+            logFile.writeln("\n=== ARCHIVOS FINALES ===");
+            for (var f = 0; f < filePaths.length; f++) {
+                logFile.writeln(filePaths[f]);
+            }
+            logFile.writeln("Total: " + filePaths.length);
+            logFile.writeln("=== FIN ===\n");
+            logFile.close();
+        } catch(e) {}
+        
+        return JSON.stringify(filePaths);
+        
+    } catch (e) {
+        logDebug("ERROR CRÍTICO: " + e.toString());
+        return JSON.stringify([]); 
+    }
+}
+
+// FUNCIÓN DE DIAGNÓSTICO - Eliminar después de resolver el problema
+function debugProjectSelection() {
+    var report = [];
+    
+    try {
+        if (!app.project) {
+            return "ERROR: No hay proyecto abierto";
+        }
+        
+        var selection = app.project.getSelection();
+        report.push("=== DIAGNÓSTICO DE SELECCIÓN ===");
+        report.push("Total items seleccionados: " + selection.length);
+        report.push("");
+        
+        for (var i = 0; i < selection.length; i++) {
+            var item = selection[i];
+            report.push("--- Item " + i + " ---");
+            report.push("name: " + (item.name || "undefined"));
+            report.push("nodeId: " + (item.nodeId || "undefined"));
+            
+            // Tipo
+            try {
+                report.push("type: " + item.type);
+            } catch (e) {
+                report.push("type: ERROR - " + e.toString());
+            }
+            
+            // Listar todas las propiedades disponibles
+            report.push("Propiedades disponibles:");
+            for (var prop in item) {
+                try {
+                    var value = item[prop];
+                    var valueType = typeof value;
+                    if (valueType === "function") {
+                        report.push("  - " + prop + "() [función]");
+                    } else {
+                        report.push("  - " + prop + " = " + value + " [" + valueType + "]");
+                    }
+                } catch (e) {
+                    report.push("  - " + prop + " [error al leer]");
+                }
+            }
+            
+            // Intentar todos los métodos conocidos para obtener ruta
+            report.push("Intentos de obtener ruta:");
+            
+            try {
+                if (item.getMediaPath) {
+                    report.push("  getMediaPath(): " + item.getMediaPath());
+                }
+            } catch (e) {
+                report.push("  getMediaPath(): ERROR - " + e.toString());
+            }
+            
+            try {
+                if (item.mediaPath) {
+                    report.push("  mediaPath: " + item.mediaPath);
+                }
+            } catch (e) {
+                report.push("  mediaPath: ERROR");
+            }
+            
+            try {
+                if (item.filePath) {
+                    report.push("  filePath: " + item.filePath);
+                }
+            } catch (e) {
+                report.push("  filePath: ERROR");
+            }
+            
+            report.push("");
+        }
+        
+        return report.join("\n");
+        
+    } catch (e) {
+        return "ERROR CRÍTICO: " + e.toString();
+    }
+}
