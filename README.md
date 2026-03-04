@@ -6,13 +6,13 @@ Una extensión para After Effects y Premiere Pro que se integra con DowP para de
   <img width="258" height="99" alt="image" src="https://github.com/user-attachments/assets/54475155-0fc2-47cd-93fc-8e1b4f90e891" />
 </div>
 
-Esta extensión depende totalmente de mi otro script, **DowP**. Pueden descargar su [**Versión**](https://github.com/MarckDP/DowP_Downloader) o leer el [**Manual de Instalación y Uso**](https://github.com/MarckDP/DowP_Importer-Adobe/blob/main/Manual%20del%20DowP.md) del DowP.
+Esta extensión depende totalmente de mi otro script, [**DowP**](https://github.com/MarckDP/DowP_Downloader).
 
 Con esta extensión puedes importar directamente al proyecto y/o a la línea de tiempo los archivos que **DowP** descargue/recodifique. Toda la configuración general de descarga y recodificación se hace en DowP; la extensión solo toma los archivos finales para importarlos. Básicamente está hecha para ahorrarte tiempo.
 
 ## Características
 
-Cuenta con solo 5 botones y una luz que muestra el estado:
+Cuenta con 6 botones y una luz que muestra el estado:
 
 - **Iniciar DowP** "🚀": Para abrir DowP desde la extensión sin tener que salir de **Pr** o **Ae**.
 
@@ -22,6 +22,8 @@ Cuenta con solo 5 botones y una luz que muestra el estado:
    - "⛓️‍💥": La extensión se desconectó de **DowP**
    - "✅": La extensión se conectó correctamente a DowP con el programa que estés usando
 
+- **Enviar selección a DowP** "📤": Para enviar los archivos que tengas seleccionados en el panel de proyecto o en la línea de tiempo de **Pr** o **Ae** directamente a DowP para procesarlos o recodificarlos.
+
 - **Añadir a la línea de tiempo** "🎬": Para activar o desactivar la opción de importar archivos de video o audio directamente a la línea de tiempo en la posición donde esté el cabezal de reproducción.
 
 - **Añadir miniatura a la linea de tiempo** "🖼️": Depende totalemnte de la anterior y sirve para decidir si importar o no las miniaturas descargadas a la línea de tiempo.
@@ -29,34 +31,25 @@ Cuenta con solo 5 botones y una luz que muestra el estado:
 - **Configurar** "⚙️": Para buscar y vincular el archivo **"DowP.exe"** que se conecta al botón "🚀" para abrir DowP desde la extensión. Siempre hay que realizar este paso en ambos programas **(Ae y Pr)**.
 
 ## Instalación
-Actualemnte solo necesitan un instalador de archivos **"ZXP"**, pero si lo prefieren ya tengo un video donde hablo sobre su instalación antigua: https://youtu.be/vQj8J0Gr_1I
 
 ### Pasos de instalación
 
-1. Descarguen el [DowP](https://github.com/MarckDP/DowP_Downloader) y ubiquenlo donde quieran, les recomiendo colocarlo en alguna carpeta vacía.
+- **Instalador Automático (Recomendado):**
+   Descarga el instalador completo desde el repositorio de [**DowP**](https://github.com/MarckDP/DowP). Este instalador configura automáticamente tanto el programa como la extensión.
 
-2. **Instalar extensión**:
-Con algun instalador de ZXP como el [ZXP/UXP Installer](https://aescripts.com/learn/zxp-installer/) o [ZXPInstaller](https://zxpinstaller.com/) instalen el "DowP_Importer_x.x.x.zxp" y ya. Pero si prefieren pueden hacerlo con el método manual:
+- **Instalación Manual:**
+1. Si prefieres no usar el instalador, descarga la carpeta `"com.dowp.importer"` de este repositorio y realiza lo siguiente:
+   - Coloca la carpeta en la ruta: `C:\Program Files (x86)\Common Files\Adobe\CEP\extensions`
+   - Ejecuta el archivo `"Activar Debug.reg"` incluido para habilitar el modo DEBUG de Adobe.
 
-**Manualmente:**
-   - Coloca la carpeta `"com.dowp.importer"` en: 
-   
-     ```
-     C:\Program Files\Common Files\Adobe\CEP\extensions
-     ```
-   - Es probable que necesites activar el modo DEBUG de Adobe. Para eso usa el archivo `"Activar Debug.reg"` incluido.
+2. **Activar en Adobe:**
+   - En After Effects o Premiere Pro, ve a **Ventana → Extensiones → DowP Importer**.
+   - La extensión es responsiva y se adapta a cualquier tamaño de panel.
 
-4. **Activar en Adobe**: 
-   - En Ae o Pr ve a **Ventana → Extensiones** 
-   - Encontrarás "DowP Importer", actívalo y colócalo donde quieras
-   - Es una extensión pequeña que se adapta tanto horizontalmente como verticalmente
-
-5. **Vincular con DowP**: 
-   - Clic en el botón ⚙️ 
-   - *Nota: En Pr la ventana del explorador se abrirá detrás del programa, búscala en la barra de tareas*
-   - Busca el .exe del DowP donde lo hayas guardado
-   - Selecciona DowP.exe
-   - **¡Y YA!** Eso es todo para tenerlo funcionando.
+3. **Vincular con DowP:**
+   - Haz clic en el botón **⚙️**.
+   - Selecciona el archivo **"DowP.exe"** en la ubicación donde lo tengas guardado.
+   - *Nota: En Premiere Pro, es posible que la ventana del explorador de archivos se abra detrás del programa; búscala en la barra de tareas.*
 
 ---
 
